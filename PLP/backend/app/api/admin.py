@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Query, Response, status
+
+from app.api.deps import CurrentAdminToken, CurrentAdminUser, DBSession
+from app.schemas.admin import (
+    AdminCandidateDetail,
+    AdminCandidateListResponse,
+    ManualScoreRequest,
+    ManualScoreResponse,
+)
+from app.services.admin_service import AdminService
+
+
+router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+@router.get("/candidates", response_model=AdminCandidateListResponse)
+async def list_candidates(
+    db: DBSession,
+    _: CurrentAdminUser,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    module_slug: str | None = None,
+    status_filter: str | None = Query(default=None, alias="status"),
+    candidate_id: str | None = None,
+    email: str | None = None,
+) -> AdminCandidateListResponse:
+    return await AdminService(db).list_candidates(page, page_size, module_slug, status_filter, candidate_id, email)
+
+
+@router.get("/candidates/{session_id}", response_model=AdminCandidateDetail)
+async def get_candidate(session_id: str, db: DBSession, _: CurrentAdminUser) -> AdminCandidateDetail:
+    return await AdminService(db).get_candidate_detail(session_id)
+
+
+@router.put("/candidates/{session_id}/manual-score", response_model=ManualScoreResponse)
+async def set_manual_score(
+    session_id: str,
+    payload: ManualScoreRequest,
+    db: DBSession,
+    admin_token: CurrentAdminToken,
+) -> ManualScoreResponse:
+    manual_score = await AdminService(db).create_manual_score(
+        session_id=session_id,
+        admin_email=str(admin_token.email),
+        score=payload.manual_score,
+        notes=payload.notes,
+    )
+    return ManualScoreResponse(
+        id=manual_score.id,
+        admin_email=manual_score.admin_email,
+        manual_score=float(manual_score.manual_score),
+        notes=manual_score.notes,
+        created_at=manual_score.created_at,
+    )
+
+
+@router.delete("/candidates/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_candidate(session_id: str, db: DBSession, admin_token: CurrentAdminToken) -> Response:
+    await AdminService(db).delete_candidate(session_id, str(admin_token.email))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

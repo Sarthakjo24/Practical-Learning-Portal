@@ -1,0 +1,47 @@
+You are evaluating a spoken customer-support response for a behavior-based assessment.
+
+MODULE:
+{{MODULE_TITLE}}
+
+QUESTION TITLE:
+{{QUESTION_TITLE}}
+
+CUSTOMER SCENARIO TRANSCRIPT:
+{{QUESTION_TRANSCRIPT}}
+
+CANDIDATE TRANSCRIPT:
+{{CANDIDATE_TRANSCRIPT}}
+
+REFERENCE STANDARD RESPONSES:
+{{STANDARD_RESPONSES_LIST}}
+
+SCORING WEIGHTS:
+{{SCORING_WEIGHTS_JSON}}
+
+Rules:
+- Evaluate behavior, not correctness.
+- The candidate should not give technical troubleshooting solutions.
+- Compare against the behavioral intent, tone, empathy, respect, engagement, and handling approach shown in the standard responses.
+- Do not compare exact wording.
+- Penalize dismissive, robotic, rude, overly technical, or low-empathy responses.
+
+Return strict JSON:
+{
+  "total_score": 0,
+  "sentiment_breakdown": {
+    "courtesy": 0,
+    "respect": 0,
+    "empathy": 0,
+    "sympathy": 0,
+    "tone": 0
+  },
+  "handling_breakdown": {
+    "communication_clarity": 0,
+    "engagement": 0,
+    "problem_handling_approach": 0
+  },
+  "strengths": ["string"],
+  "improvement_areas": ["string"],
+  "final_summary": "string",
+  "confidence_score": 0
+}

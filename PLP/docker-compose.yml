@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: practical_learning_portal
+      MYSQL_USER: plp_app
+      MYSQL_PASSWORD: change-me
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+volumes:
+  mysql_data:
