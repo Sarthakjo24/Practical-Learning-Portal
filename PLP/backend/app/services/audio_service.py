@@ -6,7 +6,7 @@ import aiofiles
 from fastapi import HTTPException, UploadFile, status
 
 from app.core.config import settings
-from app.utils.helpers import sanitize_filename
+from app.utils.helpers import basename_from_path, sanitize_filename
 
 
 class AudioService:
@@ -46,7 +46,7 @@ class AudioService:
         return f"/storage/{storage_key}"
 
     def question_audio_url(self, storage_key: str) -> str:
-        return f"/assets/questions/{storage_key}"
+        return f"/assets/questions/{basename_from_path(storage_key)}"
 
     def delete_storage_key(self, storage_key: str | None) -> None:
         if not storage_key:

@@ -45,7 +45,7 @@ async def upload_audio(
     service = SessionService(db)
     answer = await service.upload_answer_audio(user.id, session_id, question_id, file)
     return AnswerUploadResponse(
-        answer_id=answer.id,
+        answer_id=str(answer.id),
         status=answer.status.value,
         audio_url=AudioService().candidate_audio_url(answer.audio_storage_key) or "",
     )
@@ -55,7 +55,7 @@ async def upload_audio(
 async def submit_session(session_id: str, db: DBSession, user: CurrentUser) -> SubmitSessionResponse:
     session = await SessionService(db).submit_session(user.id, session_id)
     return SubmitSessionResponse(
-        session_id=session.id,
+        session_id=str(session.id),
         status=session.status.value,
         message="Responses submitted successfully.",
     )

@@ -1,10 +1,8 @@
-import { useAuth0 } from "@auth0/auth0-react";
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { AdminCandidateDetail, AdminCandidateListItem } from "../types";
 
 export function AdminDashboardPage() {
-  const { getAccessTokenSilently } = useAuth0();
   const [items, setItems] = useState<AdminCandidateListItem[]>([]);
   const [selected, setSelected] = useState<AdminCandidateDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -16,8 +14,7 @@ export function AdminDashboardPage() {
   async function loadList() {
     try {
       setLoading(true);
-      const token = await getAccessTokenSilently();
-      const response = await api.adminList(token);
+      const response = await api.adminList();
       setItems(response.items);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load admin dashboard.");
@@ -28,12 +25,11 @@ export function AdminDashboardPage() {
 
   useEffect(() => {
     void loadList();
-  }, [getAccessTokenSilently]);
+  }, []);
 
   async function handleSelect(sessionId: string) {
     try {
-      const token = await getAccessTokenSilently();
-      const detail = await api.adminDetail(token, sessionId);
+      const detail = await api.adminDetail(sessionId);
       setSelected(detail);
       setManualScore(detail.latest_manual_score?.manual_score?.toString() ?? "");
       setNotes(detail.latest_manual_score?.notes ?? "");
@@ -48,8 +44,7 @@ export function AdminDashboardPage() {
     }
 
     try {
-      const token = await getAccessTokenSilently();
-      await api.setManualScore(token, selected.session_id, Number(manualScore), notes);
+      await api.setManualScore(selected.session_id, Number(manualScore), notes);
       await handleSelect(selected.session_id);
       await loadList();
     } catch (saveError) {
@@ -59,8 +54,7 @@ export function AdminDashboardPage() {
 
   async function handleDelete(sessionId: string) {
     try {
-      const token = await getAccessTokenSilently();
-      await api.deleteCandidate(token, sessionId);
+      await api.deleteCandidate(sessionId);
       if (selected?.session_id === sessionId) {
         setSelected(null);
       }

@@ -1,70 +1,54 @@
 from __future__ import annotations
 
-from functools import lru_cache
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 import jwt
-from fastapi import HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jwt import PyJWKClient
-from pydantic import BaseModel, EmailStr, Field
+from fastapi import Cookie, HTTPException, status
 
 from app.core.config import settings
 
 
-class TokenPayload(BaseModel):
-    sub: str
-    email: EmailStr
-    name: str = "Unknown User"
-    picture: str | None = None
-    permissions: list[str] = Field(default_factory=list)
-    roles: list[str] = Field(default_factory=list)
+@dataclass
+class SessionPrincipal:
+    user_id: str
+    email: str
+    provider: str
 
 
-@lru_cache
-def get_jwks_client() -> PyJWKClient:
-    return PyJWKClient(settings.auth0_jwks_url)
+def create_session_token(principal: SessionPrincipal) -> str:
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.session_ttl_minutes)
+    payload = {
+        "sub": principal.user_id,
+        "email": principal.email,
+        "provider": principal.provider,
+        "exp": expires_at,
+    }
+    return jwt.encode(payload, settings.session_secret, algorithm=settings.session_algorithm)
 
 
-class Auth0JWTBearer(HTTPBearer):
-    async def __call__(self, request) -> TokenPayload:  # type: ignore[override]
-        credentials: HTTPAuthorizationCredentials | None = await super().__call__(request)
-        if credentials is None:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token.")
-        return verify_token(credentials.credentials)
-
-
-def verify_token(token: str) -> TokenPayload:
+def decode_session_token(token: str) -> SessionPrincipal:
     try:
-        signing_key = get_jwks_client().get_signing_key_from_jwt(token).key
         payload = jwt.decode(
             token,
-            signing_key,
-            algorithms=["RS256"],
-            audience=settings.auth0_audience,
-            issuer=settings.auth0_issuer,
+            settings.session_secret,
+            algorithms=[settings.session_algorithm],
         )
-    except Exception as exc:  # pragma: no cover - external token failures
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired access token.",
-        ) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session token.") from exc
 
-    roles = payload.get("https://plp.example.com/roles") or payload.get("roles") or []
-    permissions = payload.get("permissions") or []
-    return TokenPayload(
-        sub=payload["sub"],
-        email=payload["email"],
-        name=payload.get("name", "Unknown User"),
-        picture=payload.get("picture"),
-        permissions=permissions,
-        roles=roles,
-    )
+    user_id = payload.get("sub")
+    email = payload.get("email")
+    provider = payload.get("provider")
+    if not user_id or not email or not provider:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session payload.")
+
+    return SessionPrincipal(user_id=str(user_id), email=str(email), provider=str(provider))
 
 
-auth_scheme = Auth0JWTBearer(auto_error=True)
-
-
-def ensure_admin(payload: TokenPayload) -> TokenPayload:
-    if settings.auth0_admin_role not in payload.roles and "admin:portal" not in payload.permissions:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
-    return payload
+def get_session_principal(
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+) -> SessionPrincipal:
+    if not session_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
+    return decode_session_token(session_token)

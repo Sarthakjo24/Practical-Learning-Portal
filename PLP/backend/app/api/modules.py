@@ -20,7 +20,7 @@ async def list_modules(db: DBSession) -> list[ModuleSummary]:
     modules = await ModuleService(db).list_active_modules()
     return [
         ModuleSummary(
-            id=module.id,
+            id=str(module.id),
             slug=module.slug,
             title=module.title,
             description=module.description,

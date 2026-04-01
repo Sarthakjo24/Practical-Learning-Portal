@@ -1,6 +1,6 @@
 import { Link, Route, Routes } from "react-router-dom";
-import { useAuth0 } from "@auth0/auth0-react";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
+import { useSession } from "./auth/SessionProvider";
 import { AdminDashboardPage } from "./pages/AdminDashboardPage";
 import { AssessmentPage } from "./pages/AssessmentPage";
 import { CandidateDashboardPage } from "./pages/CandidateDashboardPage";
@@ -9,7 +9,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { SubmissionSuccessPage } from "./pages/SubmissionSuccessPage";
 
 function AppShell() {
-  const { isAuthenticated, logout } = useAuth0();
+  const { user, logout } = useSession();
 
   return (
     <div className="app-frame">
@@ -21,11 +21,8 @@ function AppShell() {
         <nav className="topnav">
           <Link to="/dashboard">Candidate</Link>
           <Link to="/admin">Admin</Link>
-          {isAuthenticated ? (
-            <button
-              className="ghost-button"
-              onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}
-            >
+          {user ? (
+            <button className="ghost-button" onClick={() => void logout()}>
               Sign out
             </button>
           ) : (
@@ -67,7 +64,7 @@ function AppShell() {
           <Route
             path="/admin"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute adminOnly>
                 <AdminDashboardPage />
               </ProtectedRoute>
             }

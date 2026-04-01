@@ -4,7 +4,7 @@ from app.schemas.admin import (
     AdminCandidateListResponse,
     ManualScoreRequest,
 )
-from app.schemas.auth import UserProfileResponse
+from app.schemas.auth import AuthMessageResponse, UserProfileResponse
 from app.schemas.candidate import (
     AnswerUploadResponse,
     CandidateAnswerDetail,
@@ -21,6 +21,7 @@ __all__ = [
     "AdminCandidateDetail",
     "AdminCandidateListItem",
     "AdminCandidateListResponse",
+    "AuthMessageResponse",
     "AnswerUploadResponse",
     "CandidateAnswerDetail",
     "CandidateSessionDetail",

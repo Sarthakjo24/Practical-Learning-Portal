@@ -1,68 +1,89 @@
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, JSON, Numeric, String, Text
+from sqlalchemy import Float, Integer, TIMESTAMP, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.utils.helpers import utcnow
+from app.utils.helpers import deserialize_text_list, serialize_text_list, utcnow
 
 
 class AIEvaluation(Base):
     __tablename__ = "ai_evaluations"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    answer_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("candidate_answers.id", ondelete="CASCADE"), unique=True, index=True
-    )
-    evaluation_config_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("evaluation_configs.id", ondelete="RESTRICT"), index=True
-    )
-    total_score: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
-    courtesy_score: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
-    respect_score: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
-    empathy_score: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
-    sympathy_score: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
-    tone_score: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
-    communication_clarity_score: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
-    engagement_score: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
-    problem_handling_approach_score: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
-    strengths: Mapped[list[str]] = mapped_column(JSON, nullable=False)
-    improvement_areas: Mapped[list[str]] = mapped_column(JSON, nullable=False)
-    final_summary: Mapped[str] = mapped_column(Text, nullable=False)
-    confidence_score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
-    raw_response: Mapped[dict] = mapped_column(JSON, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    id: Mapped[int] = mapped_column("ai_evaluation_id", Integer, primary_key=True, autoincrement=True)
+    answer_id: Mapped[int] = mapped_column(Integer, ForeignKey("candidate_answers.answer_id"), index=True, nullable=False)
+    total_score: Mapped[float | None] = mapped_column("score", Float, nullable=True)
+    courtesy_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    empathy_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    respect_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    tone_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    communication_clarity_score: Mapped[float | None] = mapped_column("communication_score", Float, nullable=True)
+    _strengths_text: Mapped[str | None] = mapped_column("strengths", Text, nullable=True)
+    _improvement_text: Mapped[str | None] = mapped_column("weakness", Text, nullable=True)
+    final_summary: Mapped[str | None] = mapped_column("feedback", Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, default=utcnow, nullable=False)
 
     answer = relationship("CandidateAnswer", back_populates="ai_evaluation")
-    evaluation_config = relationship("EvaluationConfig", back_populates="evaluations")
+
+    @property
+    def strengths(self) -> list[str]:
+        return deserialize_text_list(self._strengths_text)
+
+    @strengths.setter
+    def strengths(self, value: list[str] | str | None) -> None:
+        self._strengths_text = serialize_text_list(value)
+
+    @property
+    def improvement_areas(self) -> list[str]:
+        return deserialize_text_list(self._improvement_text)
+
+    @improvement_areas.setter
+    def improvement_areas(self, value: list[str] | str | None) -> None:
+        self._improvement_text = serialize_text_list(value)
+
+    @property
+    def sympathy_score(self) -> float:
+        return float(self.empathy_score or 0)
+
+    @property
+    def engagement_score(self) -> float:
+        return float(self.communication_clarity_score or 0)
+
+    @property
+    def problem_handling_approach_score(self) -> float:
+        return float(self.communication_clarity_score or 0)
+
+    @property
+    def confidence_score(self) -> None:
+        return None
+
+    @property
+    def raw_response(self) -> dict:
+        return {}
 
 
 class AdminScore(Base):
-    __tablename__ = "admin_scores"
+    __tablename__ = "admin_evaluations"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    session_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("candidate_sessions.id", ondelete="CASCADE"), index=True
+    id: Mapped[int] = mapped_column("admin_id", Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("candidate_sessions.session_id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
     )
-    admin_email: Mapped[str] = mapped_column(String(191), nullable=False)
-    manual_score: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
-    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    manual_score: Mapped[float | None] = mapped_column("admin_score", Float, nullable=True)
+    notes: Mapped[str | None] = mapped_column("feedback", Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column("updated_at", TIMESTAMP, default=utcnow, nullable=False)
 
     session = relationship("CandidateSession", back_populates="manual_scores")
 
+    @property
+    def admin_email(self) -> str:
+        return getattr(self, "_admin_email", "admin")
 
-class AuditLog(Base):
-    __tablename__ = "audit_logs"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    actor_type: Mapped[str] = mapped_column(String(50), index=True)
-    actor_id: Mapped[str] = mapped_column(String(191), index=True)
-    action: Mapped[str] = mapped_column(String(100), index=True)
-    entity_type: Mapped[str] = mapped_column(String(100), index=True)
-    entity_id: Mapped[str] = mapped_column(String(191), index=True)
-    metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    @admin_email.setter
+    def admin_email(self, value: str) -> None:
+        self._admin_email = value

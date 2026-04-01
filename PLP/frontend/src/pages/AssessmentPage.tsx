@@ -1,4 +1,3 @@
-import { useAuth0 } from "@auth0/auth0-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
@@ -7,7 +6,6 @@ import type { CandidateSessionDetail } from "../types";
 
 export function AssessmentPage() {
   const { sessionId = "" } = useParams();
-  const { getAccessTokenSilently } = useAuth0();
   const navigate = useNavigate();
   const [session, setSession] = useState<CandidateSessionDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -17,8 +15,7 @@ export function AssessmentPage() {
 
   async function loadSession() {
     try {
-      const token = await getAccessTokenSilently();
-      const detail = await api.sessionDetail(token, sessionId);
+      const detail = await api.sessionDetail(sessionId);
       setSession(detail);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load session.");
@@ -29,13 +26,12 @@ export function AssessmentPage() {
 
   useEffect(() => {
     void loadSession();
-  }, [getAccessTokenSilently, sessionId]);
+  }, [sessionId]);
 
   async function handleUpload(questionId: string, file: File) {
     try {
       setUploadingQuestionId(questionId);
-      const token = await getAccessTokenSilently();
-      await api.uploadAnswer(token, sessionId, questionId, file);
+      await api.uploadAnswer(sessionId, questionId, file);
       await loadSession();
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
@@ -47,8 +43,7 @@ export function AssessmentPage() {
   async function handleSubmit() {
     try {
       setSubmitting(true);
-      const token = await getAccessTokenSilently();
-      await api.submitSession(token, sessionId);
+      await api.submitSession(sessionId);
       navigate(`/submitted/${sessionId}`);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Submission failed.");

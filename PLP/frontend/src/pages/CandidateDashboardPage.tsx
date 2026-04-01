@@ -1,13 +1,12 @@
-import { useAuth0 } from "@auth0/auth0-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
+import { useSession } from "../auth/SessionProvider";
 import type { ModuleSummary, UserProfile } from "../types";
 
 export function CandidateDashboardPage() {
-  const { getAccessTokenSilently } = useAuth0();
+  const { user, refreshSession } = useSession();
   const navigate = useNavigate();
-  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [modules, setModules] = useState<ModuleSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyModule, setBusyModule] = useState<string | null>(null);
@@ -17,9 +16,8 @@ export function CandidateDashboardPage() {
     async function load() {
       try {
         setLoading(true);
-        const token = await getAccessTokenSilently();
-        const [nextProfile, nextModules] = await Promise.all([api.me(token), api.modules()]);
-        setProfile(nextProfile);
+        await refreshSession();
+        const nextModules = await api.modules();
         setModules(nextModules);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Failed to load dashboard.");
@@ -29,13 +27,12 @@ export function CandidateDashboardPage() {
     }
 
     void load();
-  }, [getAccessTokenSilently]);
+  }, [refreshSession]);
 
   async function startAssessment(moduleSlug: string) {
     try {
       setBusyModule(moduleSlug);
-      const token = await getAccessTokenSilently();
-      const session = await api.startSession(token, moduleSlug);
+      const session = await api.startSession(moduleSlug);
       navigate(`/assessment/${session.session_id}`);
     } catch (startError) {
       setError(startError instanceof Error ? startError.message : "Failed to start the assessment.");
@@ -54,7 +51,7 @@ export function CandidateDashboardPage() {
         <h1 className="page-title">Candidate dashboard</h1>
         <div className="stats-row">
           <div className="metric-card">
-            <strong>{profile?.candidate_code ?? "--"}</strong>
+            <strong>{user?.candidate_code ?? "--"}</strong>
             Candidate ID
           </div>
           <div className="metric-card">
@@ -64,7 +61,7 @@ export function CandidateDashboardPage() {
         </div>
         <div className="spacer" />
         <p className="muted">
-          Welcome, {profile?.full_name}. Start your assessment when you are ready. Scores remain
+          Welcome, {user?.full_name}. Start your assessment when you are ready. Scores remain
           hidden from the candidate interface after submission.
         </p>
         {error ? <p className="muted">{error}</p> : null}

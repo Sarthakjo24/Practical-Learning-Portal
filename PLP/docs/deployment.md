@@ -13,7 +13,7 @@
 ## Production
 
 - React static build behind Nginx or CDN
-- FastAPI behind Gunicorn + Uvicorn workers
+- FastAPI behind Gunicorn + Uvicorn workers, including Auth0 callback handling and session issuance
 - Dedicated Celery workers for assessment jobs
 - Redis for queueing
 - MySQL/MariaDB with backups

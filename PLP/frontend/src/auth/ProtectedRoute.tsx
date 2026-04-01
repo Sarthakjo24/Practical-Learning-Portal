@@ -1,17 +1,25 @@
 import { PropsWithChildren } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { useAuth0 } from "@auth0/auth0-react";
+import { useSession } from "./SessionProvider";
 
-export function ProtectedRoute({ children }: PropsWithChildren) {
-  const { isAuthenticated, isLoading } = useAuth0();
+interface ProtectedRouteProps extends PropsWithChildren {
+  adminOnly?: boolean;
+}
+
+export function ProtectedRoute({ children, adminOnly = false }: ProtectedRouteProps) {
+  const { user, loading } = useSession();
   const location = useLocation();
 
-  if (isLoading) {
+  if (loading) {
     return <div className="state-card">Checking access...</div>;
   }
 
-  if (!isAuthenticated) {
+  if (!user) {
     return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+
+  if (adminOnly && !user.is_admin) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;

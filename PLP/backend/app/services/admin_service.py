@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.ai_evaluation import AdminScore, AuditLog
+from app.models.ai_evaluation import AdminScore
 from app.models.answer import CandidateAnswer
-from app.models.questions import Module, Question
-from app.models.sessions import CandidateSession, SessionQuestion
-from app.models.user import User
+from app.models.questions import Question
+from app.models.sessions import CandidateSession
 from app.schemas.admin import AdminCandidateDetail, AdminCandidateListItem, AdminCandidateListResponse
 from app.services.audio_service import AudioService
 
@@ -28,63 +27,61 @@ class AdminService:
         candidate_id: str | None = None,
         email: str | None = None,
     ) -> AdminCandidateListResponse:
-        statement = (
+        result = await self.db.execute(
             select(CandidateSession)
             .options(
                 selectinload(CandidateSession.user),
                 selectinload(CandidateSession.module),
                 selectinload(CandidateSession.manual_scores),
+                selectinload(CandidateSession.answers).selectinload(CandidateAnswer.ai_evaluation),
             )
-            .order_by(CandidateSession.created_at.desc())
+            .order_by(CandidateSession.login_at.desc())
         )
-
-        if module_slug:
-            statement = statement.join(Module, CandidateSession.module_id == Module.id).where(Module.slug == module_slug)
-        if status_filter:
-            statement = statement.where(CandidateSession.status == status_filter)
-        if candidate_id:
-            statement = statement.join(User, CandidateSession.user_id == User.id).where(User.candidate_code == candidate_id)
-        if email:
-            statement = statement.join(User, CandidateSession.user_id == User.id).where(User.email == email)
-
-        total = await self.db.scalar(select(func.count()).select_from(statement.subquery()))
-        result = await self.db.execute(statement.offset((page - 1) * page_size).limit(page_size))
         sessions = list(result.scalars().unique().all())
 
-        items = []
+        filtered: list[CandidateSession] = []
         for session in sessions:
+            if module_slug and session.module.slug != module_slug:
+                continue
+            if status_filter and session.status.value != status_filter:
+                continue
+            if candidate_id and session.user.candidate_code != candidate_id:
+                continue
+            if email and (session.user.email or "").lower() != email.lower():
+                continue
+            filtered.append(session)
+
+        total = len(filtered)
+        sliced = filtered[(page - 1) * page_size : page * page_size]
+
+        items = []
+        for session in sliced:
             latest_manual = session.manual_scores[0] if session.manual_scores else None
             items.append(
                 AdminCandidateListItem(
-                    session_id=session.id,
+                    session_id=str(session.id),
                     candidate_id=session.user.candidate_code,
-                    name=session.user.full_name,
-                    email=session.user.email,
+                    name=session.user.full_name or session.user.email or "Candidate",
+                    email=session.user.email or "unknown@example.com",
                     module_title=session.module.title,
                     status=session.status.value,
-                    ai_score=float(session.ai_score) if session.ai_score is not None else None,
-                    evaluator_score=float(latest_manual.manual_score) if latest_manual else None,
+                    ai_score=session.ai_score,
+                    evaluator_score=float(latest_manual.manual_score or 0) if latest_manual else None,
                     submission_time=session.submitted_at,
                     login_time=session.login_at,
                 )
             )
 
-        return AdminCandidateListResponse(
-            page=page,
-            page_size=page_size,
-            total=total or 0,
-            items=items,
-        )
+        return AdminCandidateListResponse(page=page, page_size=page_size, total=total, items=items)
 
-    async def get_candidate_detail(self, session_id: str) -> AdminCandidateDetail:
+    async def get_candidate_detail(self, session_id: str | int) -> AdminCandidateDetail:
         result = await self.db.execute(
             select(CandidateSession)
-            .where(CandidateSession.id == session_id)
+            .where(CandidateSession.id == int(session_id))
             .options(
                 selectinload(CandidateSession.user),
                 selectinload(CandidateSession.module),
                 selectinload(CandidateSession.manual_scores),
-                selectinload(CandidateSession.assigned_questions).selectinload(SessionQuestion.question),
                 selectinload(CandidateSession.answers)
                 .selectinload(CandidateAnswer.question)
                 .selectinload(Question.standard_responses),
@@ -96,43 +93,36 @@ class AdminService:
         if session is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate session not found.")
 
-        ordered_questions = {item.question_id: item.display_order for item in session.assigned_questions}
         answers = []
-        for answer in sorted(session.answers, key=lambda item: ordered_questions.get(item.question_id, 999)):
+        for display_order, answer in enumerate(sorted(session.answers, key=lambda item: item.id), start=1):
             evaluation = answer.ai_evaluation
             answers.append(
                 {
-                    "answer_id": answer.id,
-                    "question_id": answer.question.id,
+                    "answer_id": str(answer.id),
+                    "question_id": str(answer.question.id),
                     "question_code": answer.question.question_code,
                     "question_title": answer.question.title,
-                    "display_order": ordered_questions.get(answer.question_id, 0),
+                    "display_order": display_order,
                     "status": answer.status.value,
                     "question_audio_url": self.audio_service.question_audio_url(answer.question.audio_storage_key),
                     "audio_url": self.audio_service.candidate_audio_url(answer.audio_storage_key),
                     "transcript_text": answer.transcript.transcript_text if answer.transcript else None,
-                    "standard_responses": [
-                        item.response_text
-                        for item in answer.question.standard_responses
-                        if item.is_active
-                    ],
+                    "standard_responses": [item.response_text for item in answer.question.standard_responses],
                     "evaluation": (
                         {
-                            "total_score": float(evaluation.total_score),
-                            "courtesy_score": float(evaluation.courtesy_score),
-                            "respect_score": float(evaluation.respect_score),
-                            "empathy_score": float(evaluation.empathy_score),
-                            "sympathy_score": float(evaluation.sympathy_score),
-                            "tone_score": float(evaluation.tone_score),
-                            "communication_clarity_score": float(evaluation.communication_clarity_score),
-                            "engagement_score": float(evaluation.engagement_score),
-                            "problem_handling_approach_score": float(evaluation.problem_handling_approach_score),
+                            "total_score": float(evaluation.total_score or 0),
+                            "courtesy_score": float(evaluation.courtesy_score or 0),
+                            "respect_score": float(evaluation.respect_score or 0),
+                            "empathy_score": float(evaluation.empathy_score or 0),
+                            "sympathy_score": float(evaluation.sympathy_score or 0),
+                            "tone_score": float(evaluation.tone_score or 0),
+                            "communication_clarity_score": float(evaluation.communication_clarity_score or 0),
+                            "engagement_score": float(evaluation.engagement_score or 0),
+                            "problem_handling_approach_score": float(evaluation.problem_handling_approach_score or 0),
                             "strengths": evaluation.strengths,
                             "improvement_areas": evaluation.improvement_areas,
-                            "final_summary": evaluation.final_summary,
-                            "confidence_score": float(evaluation.confidence_score)
-                            if evaluation.confidence_score is not None
-                            else None,
+                            "final_summary": evaluation.final_summary or "",
+                            "confidence_score": evaluation.confidence_score,
                         }
                         if evaluation
                         else None
@@ -141,20 +131,23 @@ class AdminService:
             )
 
         latest_manual = session.manual_scores[0] if session.manual_scores else None
+        if latest_manual is not None:
+            latest_manual.admin_email = latest_manual.admin_email
+
         return AdminCandidateDetail(
-            session_id=session.id,
+            session_id=str(session.id),
             candidate_id=session.user.candidate_code,
-            name=session.user.full_name,
-            email=session.user.email,
+            name=session.user.full_name or session.user.email or "Candidate",
+            email=session.user.email or "unknown@example.com",
             module_slug=session.module.slug,
             module_title=session.module.title,
             status=session.status.value,
-            ai_score=float(session.ai_score) if session.ai_score is not None else None,
+            ai_score=session.ai_score,
             latest_manual_score=(
                 {
-                    "id": latest_manual.id,
+                    "id": str(latest_manual.id),
                     "admin_email": latest_manual.admin_email,
-                    "manual_score": float(latest_manual.manual_score),
+                    "manual_score": float(latest_manual.manual_score or 0),
                     "notes": latest_manual.notes,
                     "created_at": latest_manual.created_at,
                 }
@@ -167,36 +160,31 @@ class AdminService:
             answers=answers,
         )
 
-    async def create_manual_score(self, session_id: str, admin_email: str, score: float, notes: str | None) -> AdminScore:
-        session = await self.db.get(CandidateSession, session_id)
+    async def create_manual_score(self, session_id: str | int, admin_email: str, score: float, notes: str | None) -> AdminScore:
+        session = await self.db.get(CandidateSession, int(session_id))
         if session is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate session not found.")
 
-        manual_score = AdminScore(
-            session_id=session_id,
-            admin_email=admin_email,
-            manual_score=score,
-            notes=notes,
-        )
-        self.db.add(manual_score)
-        self.db.add(
-            AuditLog(
-                actor_type="admin",
-                actor_id=admin_email,
-                action="manual_score_set",
-                entity_type="candidate_session",
-                entity_id=session_id,
-                metadata={"manual_score": score, "notes": notes},
-            )
-        )
+        result = await self.db.execute(select(AdminScore).where(AdminScore.session_id == int(session_id)))
+        manual_score = result.scalar_one_or_none()
+        if manual_score is None:
+            manual_score = AdminScore(session_id=int(session_id))
+            self.db.add(manual_score)
+
+        manual_score.manual_score = score
+        manual_score.notes = notes
+        manual_score.admin_email = admin_email
+
         await self.db.commit()
         await self.db.refresh(manual_score)
+        manual_score.admin_email = admin_email
         return manual_score
 
-    async def delete_candidate(self, session_id: str, admin_email: str) -> None:
+    async def delete_candidate(self, session_id: str | int, admin_email: str) -> None:
+        del admin_email
         result = await self.db.execute(
             select(CandidateSession)
-            .where(CandidateSession.id == session_id)
+            .where(CandidateSession.id == int(session_id))
             .options(selectinload(CandidateSession.answers))
         )
         session = result.scalar_one_or_none()
@@ -206,15 +194,5 @@ class AdminService:
         for answer in session.answers:
             self.audio_service.delete_storage_key(answer.audio_storage_key)
 
-        self.db.add(
-            AuditLog(
-                actor_type="admin",
-                actor_id=admin_email,
-                action="candidate_deleted",
-                entity_type="candidate_session",
-                entity_id=session_id,
-                metadata={"answer_count": len(session.answers)},
-            )
-        )
         await self.db.delete(session)
         await self.db.commit()

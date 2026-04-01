@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import enum
-import uuid
 from datetime import datetime
+from statistics import mean
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import Integer, TIMESTAMP, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.utils.helpers import utcnow
 
 
 class SessionStatus(str, enum.Enum):
@@ -23,27 +22,18 @@ class SessionStatus(str, enum.Enum):
 class CandidateSession(Base):
     __tablename__ = "candidate_sessions"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    module_id: Mapped[str] = mapped_column(String(36), ForeignKey("modules.id", ondelete="RESTRICT"), index=True)
-    status: Mapped[SessionStatus] = mapped_column(Enum(SessionStatus), default=SessionStatus.NOT_STARTED, index=True)
-    login_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    ai_score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
-    error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    id: Mapped[int] = mapped_column("session_id", Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.user_id"), index=True, nullable=False)
+    module_id: Mapped[int] = mapped_column(Integer, ForeignKey("modules.module_id"), index=True, nullable=False)
+    auth0_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    session_token: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+    login_at: Mapped[datetime] = mapped_column("login_time", TIMESTAMP, nullable=False)
+    submitted_at: Mapped[datetime | None] = mapped_column("submission_time", TIMESTAMP, nullable=True)
 
     user = relationship("User", back_populates="sessions")
     module = relationship("Module", back_populates="sessions")
-    assigned_questions = relationship(
-        "SessionQuestion",
-        back_populates="session",
-        cascade="all, delete-orphan",
-        order_by="SessionQuestion.display_order",
-    )
     answers = relationship("CandidateAnswer", back_populates="session", cascade="all, delete-orphan")
     manual_scores = relationship(
         "AdminScore",
@@ -52,21 +42,31 @@ class CandidateSession(Base):
         order_by="desc(AdminScore.created_at)",
     )
 
+    @property
+    def status(self) -> SessionStatus:
+        answers = list(self.answers or [])
+        if self.submitted_at is None:
+            return SessionStatus.IN_PROGRESS
+        if answers and all(answer.ai_evaluation is not None for answer in answers):
+            return SessionStatus.COMPLETED
+        if any(answer.transcript is not None for answer in answers):
+            return SessionStatus.PROCESSING
+        return SessionStatus.SUBMITTED
 
-class SessionQuestion(Base):
-    __tablename__ = "session_questions"
-    __table_args__ = (
-        UniqueConstraint("session_id", "display_order", name="uq_session_questions_session_order"),
-        UniqueConstraint("session_id", "question_id", name="uq_session_questions_session_question"),
-    )
+    @property
+    def started_at(self) -> datetime:
+        return self.login_at
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    session_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("candidate_sessions.id", ondelete="CASCADE"), index=True
-    )
-    question_id: Mapped[str] = mapped_column(String(36), ForeignKey("questions.id", ondelete="RESTRICT"), index=True)
-    display_order: Mapped[int] = mapped_column(nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    @property
+    def completed_at(self) -> datetime | None:
+        created = [answer.ai_evaluation.created_at for answer in self.answers if answer.ai_evaluation is not None]
+        return max(created) if created else None
 
-    session = relationship("CandidateSession", back_populates="assigned_questions")
-    question = relationship("Question", back_populates="session_questions")
+    @property
+    def ai_score(self) -> float | None:
+        scores = [float(answer.ai_evaluation.total_score or 0) for answer in self.answers if answer.ai_evaluation]
+        return round(mean(scores), 2) if scores else None
+
+    @property
+    def error_message(self) -> None:
+        return None

@@ -16,8 +16,8 @@ async def get_evaluation_config(module_slug: str, db: DBSession, _: CurrentAdmin
     module = await module_service.get_module_by_slug(module_slug)
     config = await module_service.get_active_evaluation_config(module.id)
     return EvaluationConfigRead(
-        id=config.id,
-        module_id=config.module_id,
+        id=str(config.id),
+        module_id=str(config.module_id),
         version=config.version,
         model_name=config.model_name,
         prompt_template=config.prompt_template,
@@ -36,8 +36,8 @@ async def update_evaluation_config(
 ) -> EvaluationConfigRead:
     config = await ModuleService(db).update_evaluation_config(module_slug, payload)
     return EvaluationConfigRead(
-        id=config.id,
-        module_id=config.module_id,
+        id=str(config.id),
+        module_id=str(config.module_id),
         version=config.version,
         model_name=config.model_name,
         prompt_template=config.prompt_template,

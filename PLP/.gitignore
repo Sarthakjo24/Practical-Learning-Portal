@@ -1,0 +1,11 @@
+
+.venv/
+frontend/node_modules/
+storage/**
+!storage/.gitkeep
+!storage/candidate_recordings/
+!storage/candidate_recordings/.gitkeep
+.env
+.env.*
+backend/.env
+frontend/.env

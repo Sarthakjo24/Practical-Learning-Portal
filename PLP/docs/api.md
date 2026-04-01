@@ -9,7 +9,11 @@ Base prefix: `/api/v1`
 
 ## Auth
 
+- `GET /auth/session`
 - `GET /auth/me`
+- `GET /auth/auth0/login?provider=google|microsoft&next=/dashboard`
+- `GET /auth/callback`
+- `POST /auth/logout`
 
 Response:
 

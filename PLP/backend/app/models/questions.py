@@ -1,89 +1,143 @@
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.config import settings
 from app.core.database import Base
-from app.utils.helpers import utcnow
+from app.utils.helpers import slugify_text, trim_text, utcnow
 
 
 class Module(Base):
     __tablename__ = "modules"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    slug: Mapped[str] = mapped_column(String(100), unique=True, index=True)
-    title: Mapped[str] = mapped_column(String(191))
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    question_count: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
+    id: Mapped[int] = mapped_column("module_id", Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column("module_name", String(255), nullable=False)
+    question_count: Mapped[int] = mapped_column("total_questions", Integer, default=5, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
-    questions = relationship("Question", back_populates="module", cascade="all, delete-orphan")
-    evaluation_configs = relationship(
-        "EvaluationConfig",
-        back_populates="module",
-        cascade="all, delete-orphan",
-        order_by="desc(EvaluationConfig.version)",
-    )
+    questions = relationship("Question", back_populates="module")
+    evaluation_configs = relationship("EvaluationConfig", back_populates="module")
     sessions = relationship("CandidateSession", back_populates="module")
+
+    @property
+    def slug(self) -> str:
+        return slugify_text(self.title)
+
+    @property
+    def description(self) -> None:
+        return None
 
 
 class EvaluationConfig(Base):
-    __tablename__ = "evaluation_configs"
-    __table_args__ = (UniqueConstraint("module_id", "version", name="uq_evaluation_configs_module_version"),)
+    __tablename__ = "evaluation_config"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    module_id: Mapped[str] = mapped_column(String(36), ForeignKey("modules.id", ondelete="CASCADE"), index=True)
-    version: Mapped[int] = mapped_column(Integer, nullable=False)
-    model_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    prompt_template: Mapped[str] = mapped_column(Text, nullable=False)
-    scoring_weights: Mapped[dict] = mapped_column(JSON, nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    id: Mapped[int] = mapped_column("evaluation_config_id", Integer, primary_key=True, autoincrement=True)
+    module_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("modules.module_id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    prompt_template: Mapped[str] = mapped_column("prompt", Text, nullable=False)
+    weight_courtesy: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    weight_empathy: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    weight_respect: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    weight_tone: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    weight_communication: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
 
     module = relationship("Module", back_populates="evaluation_configs")
-    evaluations = relationship("AIEvaluation", back_populates="evaluation_config")
+
+    @property
+    def version(self) -> int:
+        return 1
+
+    @property
+    def model_name(self) -> str:
+        return settings.openai_model
+
+    @property
+    def scoring_weights(self) -> dict[str, float]:
+        return {
+            "courtesy": float(self.weight_courtesy or 0),
+            "empathy": float(self.weight_empathy or 0),
+            "respect": float(self.weight_respect or 0),
+            "tone": float(self.weight_tone or 0),
+            "communication": float(self.weight_communication or 0),
+        }
+
+    @property
+    def is_active(self) -> bool:
+        return True
+
+    @property
+    def created_at(self) -> datetime:
+        return utcnow()
+
+    def apply_scoring_weights(self, weights: dict[str, float]) -> None:
+        self.weight_courtesy = float(weights.get("courtesy", self.weight_courtesy))
+        self.weight_empathy = float(weights.get("empathy", self.weight_empathy))
+        self.weight_respect = float(weights.get("respect", self.weight_respect))
+        self.weight_tone = float(weights.get("tone", self.weight_tone))
+        self.weight_communication = float(
+            weights.get("communication", weights.get("communication_clarity", self.weight_communication))
+        )
 
 
 class Question(Base):
     __tablename__ = "questions"
-    __table_args__ = (UniqueConstraint("module_id", "question_code", name="uq_questions_module_code"),)
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    module_id: Mapped[str] = mapped_column(String(36), ForeignKey("modules.id", ondelete="CASCADE"), index=True)
-    question_code: Mapped[str] = mapped_column(String(100), nullable=False)
-    title: Mapped[str] = mapped_column(String(191), nullable=False)
-    scenario_transcript: Mapped[str] = mapped_column(Text, nullable=False)
-    audio_storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
-    audio_duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    id: Mapped[int] = mapped_column("question_id", Integer, primary_key=True, autoincrement=False)
+    module_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("modules.module_id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    scenario_transcript: Mapped[str | None] = mapped_column("question_text", Text, nullable=True)
+    audio_storage_key: Mapped[str] = mapped_column("audio_url", String(500), nullable=False)
 
     module = relationship("Module", back_populates="questions")
-    standard_responses = relationship(
-        "StandardResponse",
-        back_populates="question",
-        cascade="all, delete-orphan",
-        order_by="StandardResponse.response_order",
-    )
-    session_questions = relationship("SessionQuestion", back_populates="question")
+    standard_responses = relationship("StandardResponse", back_populates="question", order_by="StandardResponse.id")
     answers = relationship("CandidateAnswer", back_populates="question")
+
+    @property
+    def question_code(self) -> str:
+        return f"Q-{int(self.id):03d}"
+
+    @property
+    def title(self) -> str:
+        return trim_text(self.scenario_transcript, f"Question {self.id}")
+
+    @property
+    def is_active(self) -> bool:
+        return True
+
+    @property
+    def audio_duration_seconds(self) -> None:
+        return None
 
 
 class StandardResponse(Base):
     __tablename__ = "standard_responses"
-    __table_args__ = (UniqueConstraint("question_id", "response_order", name="uq_standard_responses_question_order"),)
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    question_id: Mapped[str] = mapped_column(String(36), ForeignKey("questions.id", ondelete="CASCADE"), index=True)
-    response_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    id: Mapped[int] = mapped_column("standard_response_id", Integer, primary_key=True, autoincrement=True)
+    question_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("questions.question_id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
     response_text: Mapped[str] = mapped_column(Text, nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     question = relationship("Question", back_populates="standard_responses")
+
+    @property
+    def response_order(self) -> int:
+        return int(self.id)
+
+    @property
+    def is_active(self) -> bool:
+        return True

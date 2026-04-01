@@ -2,39 +2,31 @@
 
 ## Auth0 Setup
 
-Create:
-
-- One SPA application for the React frontend
-- One Auth0 API with audience `https://plp.api`
+Create one Auth0 application of type `Regular Web Application`.
 
 Enable identity providers:
 
 - Google OAuth2
 - Microsoft Account or Entra ID
 
-## Frontend Settings
+## Application Settings
 
-Allowed callback URLs:
+Use these local values:
 
-- `http://localhost:5173`
-- `https://portal.example.com`
+- Allowed Callback URLs: `http://localhost:8000/api/v1/auth/callback`
+- Allowed Logout URLs: `http://localhost:5173/login`
+- Allowed Web Origins: `http://localhost:5173,http://localhost:8000`
+- Application Login URL: `http://localhost:5173/login`
 
-Allowed logout URLs:
-
-- `http://localhost:5173`
-- `https://portal.example.com`
-
-Allowed web origins:
-
-- `http://localhost:5173`
-- `https://portal.example.com`
+Leave Cross-Origin Authentication disabled and leave Cross-Origin Verification Fallback URL blank.
 
 ## Backend Expectations
 
-The backend validates:
+The backend:
 
-- issuer: `https://{AUTH0_DOMAIN}/`
-- audience: `AUTH0_AUDIENCE`
-- JWKS: `https://{AUTH0_DOMAIN}/.well-known/jwks.json`
+- redirects the browser to Auth0
+- exchanges the authorization code on callback
+- verifies the Auth0 ID token with Auth0 JWKS
+- creates a signed session cookie for the app
 
-Admin access is granted when the token includes the configured `AUTH0_ADMIN_ROLE` or permission `admin:portal`.
+Admin access is driven locally through the `ADMIN_EMAILS` allowlist in `backend/.env`.

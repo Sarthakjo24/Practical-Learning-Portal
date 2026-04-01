@@ -1,19 +1,26 @@
-import { useAuth0 } from "@auth0/auth0-react";
+import { useLocation } from "react-router-dom";
+import { useSession } from "../auth/SessionProvider";
 
 export function LoginPage() {
-  const { loginWithRedirect, isLoading } = useAuth0();
+  const { login, loading } = useSession();
+  const location = useLocation();
+  const returnTo =
+    (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || "/dashboard";
 
   return (
     <section className="dashboard-grid">
       <div className="panel">
         <h1 className="page-title">Secure sign-in</h1>
         <p className="muted">
-          Use your Google or Microsoft account through Auth0. Your candidate profile is created
-          automatically after authentication.
+          Use Google or Microsoft through Auth0. The backend completes the callback and creates your
+          session cookie automatically after authentication.
         </p>
         <div className="hero-actions">
-          <button className="primary-button" disabled={isLoading} onClick={() => loginWithRedirect()}>
-            {isLoading ? "Loading..." : "Continue with Auth0"}
+          <button className="primary-button" disabled={loading} onClick={() => login("google", returnTo)}>
+            Continue with Google
+          </button>
+          <button className="secondary-button" disabled={loading} onClick={() => login("microsoft", returnTo)}>
+            Continue with Microsoft
           </button>
         </div>
       </div>

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query, Response, status
 
-from app.api.deps import CurrentAdminToken, CurrentAdminUser, DBSession
+from app.api.deps import CurrentAdminUser, DBSession
 from app.schemas.admin import (
     AdminCandidateDetail,
     AdminCandidateListResponse,
@@ -39,16 +39,16 @@ async def set_manual_score(
     session_id: str,
     payload: ManualScoreRequest,
     db: DBSession,
-    admin_token: CurrentAdminToken,
+    admin_user: CurrentAdminUser,
 ) -> ManualScoreResponse:
     manual_score = await AdminService(db).create_manual_score(
         session_id=session_id,
-        admin_email=str(admin_token.email),
+        admin_email=admin_user.email,
         score=payload.manual_score,
         notes=payload.notes,
     )
     return ManualScoreResponse(
-        id=manual_score.id,
+        id=str(manual_score.id),
         admin_email=manual_score.admin_email,
         manual_score=float(manual_score.manual_score),
         notes=manual_score.notes,
@@ -57,6 +57,6 @@ async def set_manual_score(
 
 
 @router.delete("/candidates/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_candidate(session_id: str, db: DBSession, admin_token: CurrentAdminToken) -> Response:
-    await AdminService(db).delete_candidate(session_id, str(admin_token.email))
+async def delete_candidate(session_id: str, db: DBSession, admin_user: CurrentAdminUser) -> Response:
+    await AdminService(db).delete_candidate(session_id, admin_user.email)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

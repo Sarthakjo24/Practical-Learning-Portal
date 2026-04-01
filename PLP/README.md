@@ -1,6 +1,6 @@
 # Practical Learning Portal
 
-Practical Learning Portal is an AI-powered candidate assessment platform for behavior-based audio response evaluation. Candidates authenticate with Auth0, receive five randomized audio scenarios from a module, record spoken responses, and submit them for background transcription and AI evaluation. Admins review AI scores, transcripts, insights, and can apply manual overrides.
+Practical Learning Portal is an AI-powered candidate assessment platform for behavior-based audio response evaluation. Candidates authenticate with Auth0 through a backend-managed login flow, receive five randomized audio scenarios from a module, record spoken responses, and submit them for background transcription and AI evaluation. Admins review AI scores, transcripts, insights, and can apply manual overrides.
 
 ## Textual Architecture Diagram
 
@@ -15,7 +15,7 @@ Practical Learning Portal is an AI-powered candidate assessment platform for beh
             |
             v
 [FastAPI API]
-  |- Auth0 JWT validation
+  |- Auth0 code exchange and session cookie issuance
   |- Module/question retrieval from MySQL
   |- Candidate session orchestration
   |- Local candidate audio storage

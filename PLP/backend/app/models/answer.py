@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import enum
-import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Integer, TIMESTAMP, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.config import settings
 from app.core.database import Base
 from app.utils.helpers import utcnow
 
@@ -22,19 +22,13 @@ class AnswerStatus(str, enum.Enum):
 
 class CandidateAnswer(Base):
     __tablename__ = "candidate_answers"
-    __table_args__ = (UniqueConstraint("session_id", "question_id", name="uq_candidate_answers_session_question"),)
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    session_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("candidate_sessions.id", ondelete="CASCADE"), index=True
-    )
-    question_id: Mapped[str] = mapped_column(String(36), ForeignKey("questions.id", ondelete="RESTRICT"), index=True)
-    status: Mapped[AnswerStatus] = mapped_column(Enum(AnswerStatus), default=AnswerStatus.PENDING, index=True)
-    audio_storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    audio_duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
-    submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    id: Mapped[int] = mapped_column("answer_id", Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(Integer, ForeignKey("candidate_sessions.session_id"), index=True, nullable=False)
+    question_id: Mapped[int] = mapped_column(Integer, ForeignKey("questions.question_id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.user_id"), index=True, nullable=False)
+    audio_storage_key: Mapped[str] = mapped_column("audio_url", String(500), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, default=utcnow, nullable=False)
 
     session = relationship("CandidateSession", back_populates="answers")
     question = relationship("Question", back_populates="answers")
@@ -46,18 +40,45 @@ class CandidateAnswer(Base):
         cascade="all, delete-orphan",
     )
 
+    @property
+    def status(self) -> AnswerStatus:
+        if self.ai_evaluation is not None:
+            return AnswerStatus.EVALUATED
+        if self.transcript is not None:
+            return AnswerStatus.TRANSCRIBED
+        if self.audio_storage_key:
+            return AnswerStatus.RECORDED
+        return AnswerStatus.PENDING
+
+    @property
+    def audio_duration_seconds(self) -> None:
+        return None
+
+    @property
+    def submitted_at(self) -> datetime | None:
+        if self.session is not None and self.session.submitted_at is not None:
+            return self.session.submitted_at
+        return self.created_at if self.audio_storage_key else None
+
 
 class Transcript(Base):
     __tablename__ = "transcripts"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    answer_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("candidate_answers.id", ondelete="CASCADE"), unique=True, index=True
-    )
+    id: Mapped[int] = mapped_column("transcript_id", Integer, primary_key=True, autoincrement=True)
+    answer_id: Mapped[int] = mapped_column(Integer, ForeignKey("candidate_answers.answer_id"), index=True, nullable=False)
     transcript_text: Mapped[str] = mapped_column(Text, nullable=False)
-    detected_language: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    model_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    processing_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, default=utcnow, nullable=False)
 
     answer = relationship("CandidateAnswer", back_populates="transcript")
+
+    @property
+    def detected_language(self) -> None:
+        return None
+
+    @property
+    def model_name(self) -> str:
+        return settings.faster_whisper_model
+
+    @property
+    def processing_seconds(self) -> None:
+        return None
