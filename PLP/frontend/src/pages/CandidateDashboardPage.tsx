@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useSession } from "../auth/SessionProvider";
-import type { ModuleSummary, UserProfile } from "../types";
+import type { ModuleSummary } from "../types";
 
 export function CandidateDashboardPage() {
-  const { user, refreshSession } = useSession();
+  const { user } = useSession();
   const navigate = useNavigate();
   const [modules, setModules] = useState<ModuleSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -16,7 +16,7 @@ export function CandidateDashboardPage() {
     async function load() {
       try {
         setLoading(true);
-        await refreshSession();
+        setError(null);
         const nextModules = await api.modules();
         setModules(nextModules);
       } catch (loadError) {
@@ -27,7 +27,7 @@ export function CandidateDashboardPage() {
     }
 
     void load();
-  }, [refreshSession]);
+  }, []);
 
   async function startAssessment(moduleSlug: string) {
     try {

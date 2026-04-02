@@ -3,23 +3,38 @@ import type { CandidateAnswerDetail } from "../types";
 
 interface AudioQuestionCardProps {
   answer: CandidateAnswerDetail;
-  uploading: boolean;
-  onUpload: (questionId: string, file: File) => Promise<void>;
+  pendingFile: File | null;
+  onRecordingReady: (questionId: string, file: File) => void;
 }
 
-export function AudioQuestionCard({ answer, uploading, onUpload }: AudioQuestionCardProps) {
+export function AudioQuestionCard({ answer, pendingFile, onRecordingReady }: AudioQuestionCardProps) {
   const [recording, setRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(answer.audio_url ?? null);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const hasExistingResponse = Boolean(answer.audio_url || pendingFile);
+  const hasPendingRecording = Boolean(pendingFile);
 
   useEffect(() => {
+    if (pendingFile) {
+      const nextPreviewUrl = URL.createObjectURL(pendingFile);
+      setPreviewUrl((current) => {
+        if (current?.startsWith("blob:")) {
+          URL.revokeObjectURL(current);
+        }
+        return nextPreviewUrl;
+      });
+      return () => {
+        URL.revokeObjectURL(nextPreviewUrl);
+      };
+    }
+
     setPreviewUrl(answer.audio_url ?? null);
-  }, [answer.audio_url]);
+    return undefined;
+  }, [answer.audio_url, pendingFile]);
 
   useEffect(() => {
     return () => {
@@ -47,11 +62,7 @@ export function AudioQuestionCard({ answer, uploading, onUpload }: AudioQuestion
       recorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
         const file = new File([blob], `${answer.question_code}.webm`, { type: "audio/webm" });
-        setPendingFile(file);
-        if (previewUrl?.startsWith("blob:")) {
-          URL.revokeObjectURL(previewUrl);
-        }
-        setPreviewUrl(URL.createObjectURL(blob));
+        onRecordingReady(answer.question_id, file);
         stream.getTracks().forEach((track) => track.stop());
       };
 
@@ -65,14 +76,6 @@ export function AudioQuestionCard({ answer, uploading, onUpload }: AudioQuestion
   function stopRecording() {
     recorderRef.current?.stop();
     setRecording(false);
-  }
-
-  async function handleUpload() {
-    if (!pendingFile) {
-      return;
-    }
-    await onUpload(answer.question_id, pendingFile);
-    setPendingFile(null);
   }
 
   return (
@@ -90,13 +93,19 @@ export function AudioQuestionCard({ answer, uploading, onUpload }: AudioQuestion
 
       <div>
         <p className="muted">Scenario audio</p>
-        <audio controls src={answer.question_audio_url} style={{ width: "100%" }} />
+        <audio
+          controls
+          controlsList="nodownload"
+          onContextMenu={(event) => event.preventDefault()}
+          src={answer.question_audio_url}
+          style={{ width: "100%" }}
+        />
       </div>
 
       <div className="record-strip">
         {!recording ? (
           <button className="primary-button" type="button" onClick={startRecording}>
-            Start recording
+            {hasExistingResponse ? "Record replacement" : "Start recording"}
           </button>
         ) : (
           <button className="secondary-button" type="button" onClick={stopRecording}>
@@ -104,27 +113,32 @@ export function AudioQuestionCard({ answer, uploading, onUpload }: AudioQuestion
           </button>
         )}
 
-        <span className={`status ${recording ? "warning" : "success"}`}>
-          {recording ? "Recording live" : "Recorder idle"}
+        <span className={`status ${recording ? "warning" : hasPendingRecording ? "success" : "success"}`}>
+          {recording ? "Recording live" : hasPendingRecording ? "Ready to submit" : "Recorder idle"}
         </span>
       </div>
 
       {previewUrl ? (
         <div>
           <p className="muted">Candidate playback</p>
-          <audio controls src={previewUrl} style={{ width: "100%" }} />
+          <audio
+            controls
+            controlsList="nodownload"
+            onContextMenu={(event) => event.preventDefault()}
+            src={previewUrl}
+            style={{ width: "100%" }}
+          />
         </div>
       ) : null}
 
       <div className="record-strip">
-        <button
-          className="primary-button"
-          type="button"
-          disabled={!pendingFile || uploading}
-          onClick={handleUpload}
-        >
-          {uploading ? "Uploading..." : "Upload response"}
-        </button>
+        <span className={`status ${hasPendingRecording ? "success" : answer.audio_url ? "success" : "warning"}`}>
+          {hasPendingRecording
+            ? "Will upload on final submit"
+            : answer.audio_url
+              ? "Response saved"
+              : "No response recorded yet"}
+        </span>
         {answer.transcript_text ? <span className="status success">Processed</span> : null}
       </div>
 

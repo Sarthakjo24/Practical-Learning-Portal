@@ -14,6 +14,7 @@ export interface UserProfile {
   avatar_url?: string | null;
   last_login_at: string;
   is_admin: boolean;
+  can_access_admin: boolean;
 }
 
 export interface CandidateQuestion {

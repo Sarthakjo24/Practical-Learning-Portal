@@ -10,7 +10,7 @@ from fastapi import APIRouter, Cookie, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from jwt import PyJWKClient
 
-from app.api.deps import CurrentUser, DBSession
+from app.api.deps import CurrentUser, DBSession, user_can_access_admin
 from app.core.config import settings
 from app.core.security import SessionPrincipal, create_session_token
 from app.schemas.auth import AuthMessageResponse, UserProfileResponse
@@ -108,7 +108,8 @@ async def get_current_profile(user: CurrentUser) -> UserProfileResponse:
         email=user.email or "unknown@example.com",
         avatar_url=user.avatar_url,
         last_login_at=user.last_login_at,
-        is_admin=settings.is_admin_email(user.email or ""),
+        is_admin=settings.is_admin_email(user.email or "") or user.is_admin,
+        can_access_admin=user_can_access_admin(user),
     )
 
 

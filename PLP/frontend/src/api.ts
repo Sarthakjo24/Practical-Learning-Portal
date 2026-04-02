@@ -7,7 +7,7 @@ import type {
   UserProfile
 } from "./types";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
 async function parseResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -63,11 +63,21 @@ export const api = {
       }
     );
   },
-  submitSession: (sessionId: string) =>
-    apiRequest<{ session_id: string; status: string; message: string }>(
+  submitSession: (sessionId: string, recordings: Record<string, File> = {}) => {
+    const formData = new FormData();
+    for (const [questionId, file] of Object.entries(recordings)) {
+      formData.append("question_ids", questionId);
+      formData.append("files", file);
+    }
+
+    return apiRequest<{ session_id: string; status: string; message: string }>(
       `/candidate/sessions/${sessionId}/submit`,
-      { method: "POST" }
-    ),
+      {
+        method: "POST",
+        body: formData,
+      }
+    );
+  },
   adminList: () => apiRequest<AdminCandidateListResponse>("/admin/candidates"),
   adminDetail: (sessionId: string) => apiRequest<AdminCandidateDetail>(`/admin/candidates/${sessionId}`),
   setManualScore: (sessionId: string, manualScore: number, notes: string) =>

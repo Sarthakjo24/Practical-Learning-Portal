@@ -2,6 +2,7 @@ import { Link, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { useSession } from "./auth/SessionProvider";
 import { AdminDashboardPage } from "./pages/AdminDashboardPage";
+import { AdminResponsePage } from "./pages/AdminResponsePage";
 import { AssessmentPage } from "./pages/AssessmentPage";
 import { CandidateDashboardPage } from "./pages/CandidateDashboardPage";
 import { LandingPage } from "./pages/LandingPage";
@@ -66,6 +67,14 @@ function AppShell() {
             element={
               <ProtectedRoute adminOnly>
                 <AdminDashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/candidates/:sessionId"
+            element={
+              <ProtectedRoute adminOnly>
+                <AdminResponsePage />
               </ProtectedRoute>
             }
           />

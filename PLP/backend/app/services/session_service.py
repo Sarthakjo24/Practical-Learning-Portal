@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 import secrets
 
 from fastapi import HTTPException, UploadFile, status
@@ -8,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.answer import CandidateAnswer
+from app.core.config import settings
 from app.models.questions import Question
 from app.models.sessions import CandidateSession
 from app.models.user import User
@@ -15,6 +18,9 @@ from app.schemas.candidate import CandidateAnswerDetail, CandidateSessionDetail,
 from app.services.audio_service import AudioService
 from app.services.module_service import ModuleService
 from app.utils.helpers import utcnow
+
+
+logger = logging.getLogger(__name__)
 
 
 class SessionService:
@@ -25,7 +31,8 @@ class SessionService:
 
     async def start_session(self, user: User, module_slug: str) -> CandidateSession:
         module = await self.module_service.get_module_by_slug(module_slug)
-        questions = await self.module_service.get_random_questions(module.id, module.question_count)
+        question_limit = settings.candidate_question_count
+        questions = await self.module_service.get_random_questions(module.id, question_limit)
         started_at = utcnow()
 
         session = CandidateSession(
@@ -85,17 +92,38 @@ class SessionService:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Session is already submitted.")
 
         result = await self.db.execute(
-            select(CandidateAnswer).where(
+            select(CandidateAnswer)
+            .where(
                 CandidateAnswer.session_id == session.id,
                 CandidateAnswer.question_id == int(question_id),
                 CandidateAnswer.user_id == int(user_id),
+            )
+            .options(
+                selectinload(CandidateAnswer.transcript),
+                selectinload(CandidateAnswer.ai_evaluation),
             )
         )
         answer = result.scalar_one_or_none()
         if answer is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Answer slot not found.")
 
-        answer.audio_storage_key = await self.audio_service.save_candidate_recording(upload, str(session.id), str(question_id))
+        old_storage_key = answer.audio_storage_key
+        new_storage_key = await self.audio_service.save_candidate_recording(upload, str(session.id), str(question_id))
+
+        if answer.transcript is not None:
+            await self.db.delete(answer.transcript)
+            answer.transcript = None
+
+        if answer.ai_evaluation is not None:
+            await self.db.delete(answer.ai_evaluation)
+            answer.ai_evaluation = None
+
+        answer.audio_storage_key = new_storage_key
+        answer.created_at = utcnow()
+
+        if old_storage_key and old_storage_key != new_storage_key:
+            self.audio_service.delete_storage_key(old_storage_key)
+
         await self.db.commit()
         await self.db.refresh(answer)
         return answer
@@ -111,9 +139,13 @@ class SessionService:
 
         session.submitted_at = utcnow()
         await self.db.commit()
-        from app.workers.tasks import process_candidate_session
+        from app.workers.tasks import _process_candidate_session, process_candidate_session
 
-        process_candidate_session.delay(str(session.id))
+        try:
+            process_candidate_session.delay(str(session.id))
+        except Exception:
+            logger.exception("Celery dispatch failed for session %s. Falling back to in-process background task.", session.id)
+            asyncio.create_task(_process_candidate_session(int(session.id)))
         return session
 
     async def build_session_detail(self, session: CandidateSession) -> CandidateSessionDetail:

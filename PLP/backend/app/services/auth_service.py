@@ -22,6 +22,7 @@ class AuthService:
     ) -> User:
         del avatar_url
         normalized_email = email.strip().lower()
+        provider = auth0_user_id.split("|", 1)[0] if "|" in auth0_user_id else "auth0"
         result = await self.db.execute(select(User).where(User.auth0_user_id == auth0_user_id))
         user = result.scalar_one_or_none()
 
@@ -34,7 +35,7 @@ class AuthService:
                 auth0_user_id=auth0_user_id,
                 full_name=full_name,
                 email=normalized_email,
-                provider=auth0_user_id.split("|", 1)[0] if "|" in auth0_user_id else "auth0",
+                provider=provider,
                 role="admin" if settings.is_admin_email(normalized_email) else "candidate",
             )
             self.db.add(user)
@@ -42,8 +43,8 @@ class AuthService:
             user.auth0_user_id = auth0_user_id
             user.full_name = full_name
             user.email = normalized_email
-            user.provider = auth0_user_id.split("|", 1)[0] if "|" in auth0_user_id else user.provider
-            user.role = "admin" if settings.is_admin_email(normalized_email) else "candidate"
+            user.provider = provider or user.provider
+            user.role = "admin" if (settings.is_admin_email(normalized_email) or user.is_admin) else "candidate"
 
         await self.db.commit()
         await self.db.refresh(user)

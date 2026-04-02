@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     session_cookie_secure: bool = False
     session_cookie_samesite: str = "lax"
     session_cookie_domain: str | None = None
+    open_admin_portal: bool = True
 
     admin_emails: list[str] = Field(default_factory=list)
 
@@ -191,6 +192,10 @@ class Settings(BaseSettings):
             self.prompt_template_path,
             PROJECT_ROOT / "templates" / "evaluation_prompt.txt",
         )
+
+    @property
+    def frontend_dist_dir(self) -> Path:
+        return PROJECT_ROOT / "frontend" / "dist"
 
     def ensure_directories(self) -> None:
         self.storage_dir.mkdir(parents=True, exist_ok=True)

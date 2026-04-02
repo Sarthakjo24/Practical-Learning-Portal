@@ -25,3 +25,7 @@ class User(Base):
     @property
     def avatar_url(self) -> None:
         return None
+
+    @property
+    def is_admin(self) -> bool:
+        return str(self.role or "").strip().lower() == "admin"

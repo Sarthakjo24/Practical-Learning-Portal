@@ -1,24 +1,12 @@
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 
 export function SubmissionSuccessPage() {
-  const { sessionId } = useParams();
+  void useParams();
 
   return (
     <section className="dashboard-grid">
       <div className="panel">
-        <h1 className="page-title">Responses submitted successfully</h1>
-        <p className="muted">
-          Your recordings have entered the background evaluation pipeline. No score is shown in the
-          candidate experience.
-        </p>
-        <div className="badge-row">
-          <span className="pill">{sessionId}</span>
-          <span className="pill">Processing in background</span>
-        </div>
-        <div className="spacer" />
-        <Link className="primary-button" to="/dashboard">
-          Return to dashboard
-        </Link>
+        <h1 className="page-title">thank you for the response , our team will connect with you via email for further process</h1>
       </div>
     </section>
   );

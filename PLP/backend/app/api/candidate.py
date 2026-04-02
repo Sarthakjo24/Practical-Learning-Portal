@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 
 from app.api.deps import CurrentUser, DBSession
 from app.schemas.candidate import (
@@ -52,8 +52,24 @@ async def upload_audio(
 
 
 @router.post("/sessions/{session_id}/submit", response_model=SubmitSessionResponse)
-async def submit_session(session_id: str, db: DBSession, user: CurrentUser) -> SubmitSessionResponse:
-    session = await SessionService(db).submit_session(user.id, session_id)
+async def submit_session(
+    session_id: str,
+    db: DBSession,
+    user: CurrentUser,
+    question_ids: list[str] = Form(default=[]),
+    files: list[UploadFile] = File(default=[]),
+) -> SubmitSessionResponse:
+    if len(question_ids) != len(files):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Each uploaded recording must include a matching question id.",
+        )
+
+    service = SessionService(db)
+    for question_id, file in zip(question_ids, files):
+        await service.upload_answer_audio(user.id, session_id, question_id, file)
+
+    session = await service.submit_session(user.id, session_id)
     return SubmitSessionResponse(
         session_id=str(session.id),
         status=session.status.value,

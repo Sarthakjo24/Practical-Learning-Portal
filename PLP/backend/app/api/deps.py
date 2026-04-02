@@ -5,9 +5,9 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import SessionPrincipal, get_session_principal
+from app.core.config import settings
 from app.models.user import User
 from app.services.auth_service import AuthService
 
@@ -26,8 +26,12 @@ async def get_current_user(
     return user
 
 
+def user_can_access_admin(user: User) -> bool:
+    return settings.open_admin_portal or settings.is_admin_email(user.email or "") or user.is_admin
+
+
 async def get_current_admin_user(user: User = Depends(get_current_user)) -> User:
-    if not settings.is_admin_email(user.email or ""):
+    if not user_can_access_admin(user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
     return user
 

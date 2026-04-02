@@ -1,4 +1,4 @@
-import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import type { UserProfile } from "../types";
 
@@ -16,7 +16,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  async function refreshSession() {
+  const refreshSession = useCallback(async () => {
     try {
       const sessionUser = await api.session();
       setUser(sessionUser);
@@ -25,25 +25,25 @@ export function SessionProvider({ children }: PropsWithChildren) {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     void refreshSession();
-  }, []);
+  }, [refreshSession]);
 
-  async function logout() {
+  const logout = useCallback(async () => {
     await api.logout();
     setUser(null);
     window.location.href = "/login";
-  }
+  }, []);
 
-  function login(provider: "google" | "microsoft", nextPath = "/dashboard") {
+  const login = useCallback((provider: "google" | "microsoft", nextPath = "/dashboard") => {
     window.location.href = api.authLoginUrl(provider, nextPath);
-  }
+  }, []);
 
   const value = useMemo(
     () => ({ user, loading, refreshSession, login, logout }),
-    [user, loading]
+    [user, loading, refreshSession, login, logout]
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

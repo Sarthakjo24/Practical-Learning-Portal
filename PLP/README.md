@@ -2,6 +2,27 @@
 
 Practical Learning Portal is an AI-powered candidate assessment platform for behavior-based audio response evaluation. Candidates authenticate with Auth0 through a backend-managed login flow, receive five randomized audio scenarios from a module, record spoken responses, and submit them for background transcription and AI evaluation. Admins review AI scores, transcripts, insights, and can apply manual overrides.
 
+## Local Run
+
+The project can be launched as one integrated system from the repo root:
+
+```powershell
+python app.py
+```
+
+What this does:
+
+- ensures MySQL and Redis are available locally
+- builds the React frontend
+- starts the Celery worker
+- starts the FastAPI app on `http://localhost:5180`
+- serves the built frontend and backend API from the same app entrypoint
+
+Main local URLs:
+
+- App: `http://localhost:5180`
+- Docs: `http://localhost:5180/docs`
+
 ## Textual Architecture Diagram
 
 ```text

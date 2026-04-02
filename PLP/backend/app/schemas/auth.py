@@ -13,6 +13,7 @@ class UserProfileResponse(BaseModel):
     avatar_url: str | None = None
     last_login_at: datetime
     is_admin: bool
+    can_access_admin: bool
 
 
 class AuthMessageResponse(BaseModel):

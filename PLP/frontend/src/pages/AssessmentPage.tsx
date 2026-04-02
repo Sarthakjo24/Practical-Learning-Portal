@@ -10,8 +10,8 @@ export function AssessmentPage() {
   const [session, setSession] = useState<CandidateSessionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [uploadingQuestionId, setUploadingQuestionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pendingRecordings, setPendingRecordings] = useState<Record<string, File>>({});
 
   async function loadSession() {
     try {
@@ -28,23 +28,20 @@ export function AssessmentPage() {
     void loadSession();
   }, [sessionId]);
 
-  async function handleUpload(questionId: string, file: File) {
-    try {
-      setUploadingQuestionId(questionId);
-      await api.uploadAnswer(sessionId, questionId, file);
-      await loadSession();
-    } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
-    } finally {
-      setUploadingQuestionId(null);
-    }
+  function handleRecordingReady(questionId: string, file: File) {
+    setPendingRecordings((current) => ({
+      ...current,
+      [questionId]: file,
+    }));
   }
 
   async function handleSubmit() {
     try {
       setSubmitting(true);
-      await api.submitSession(sessionId);
-      navigate(`/submitted/${sessionId}`);
+      setError(null);
+      await api.submitSession(sessionId, pendingRecordings);
+      setPendingRecordings({});
+      navigate(`/submitted/${sessionId}`, { replace: true });
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Submission failed.");
     } finally {
@@ -56,7 +53,9 @@ export function AssessmentPage() {
     return <div className="state-card">Loading assessment...</div>;
   }
 
-  const readyToSubmit = session?.answers.every((answer) => Boolean(answer.audio_url));
+  const readyToSubmit = session?.answers.every(
+    (answer) => Boolean(answer.audio_url || pendingRecordings[answer.question_id])
+  );
 
   return (
     <section className="stack">
@@ -69,8 +68,8 @@ export function AssessmentPage() {
         </div>
         <div className="spacer" />
         <p className="muted">
-          Listen carefully, record each spoken response, upload it, and submit only after all five
-          answers are ready.
+          Listen carefully, record each spoken response, and submit once at the end. All recorded
+          answers will upload together when you press the final submit button.
         </p>
         {error ? <p className="muted">{error}</p> : null}
       </div>
@@ -82,8 +81,8 @@ export function AssessmentPage() {
           <AudioQuestionCard
             key={answer.answer_id}
             answer={answer}
-            uploading={uploadingQuestionId === answer.question_id}
-            onUpload={handleUpload}
+            pendingFile={pendingRecordings[answer.question_id] ?? null}
+            onRecordingReady={handleRecordingReady}
           />
         ))}
 

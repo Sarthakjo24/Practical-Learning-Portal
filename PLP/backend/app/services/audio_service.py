@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 import aiofiles
 from fastapi import HTTPException, UploadFile, status
@@ -46,7 +47,7 @@ class AudioService:
         return f"/storage/{storage_key}"
 
     def question_audio_url(self, storage_key: str) -> str:
-        return f"/assets/questions/{basename_from_path(storage_key)}"
+        return f"/assets/questions/{self._resolve_question_audio_name(storage_key)}"
 
     def delete_storage_key(self, storage_key: str | None) -> None:
         if not storage_key:
@@ -61,3 +62,27 @@ class AudioService:
         if not str(candidate).startswith(str(storage_root)):
             raise ValueError("Refusing to access storage path outside configured storage root.")
         return candidate
+
+    def _resolve_question_audio_name(self, storage_key: str) -> str:
+        requested_name = basename_from_path(storage_key)
+        question_audio_dir = settings.question_audio_dir
+        exact_path = question_audio_dir / requested_name
+        if exact_path.exists():
+            return requested_name
+
+        requested_path = Path(requested_name)
+        requested_suffix = requested_path.suffix.lower()
+        requested_stem = self._normalize_audio_stem(requested_path.stem)
+
+        for candidate in question_audio_dir.iterdir():
+            if not candidate.is_file():
+                continue
+            if candidate.suffix.lower() != requested_suffix:
+                continue
+            if self._normalize_audio_stem(candidate.stem) == requested_stem:
+                return candidate.name
+
+        return requested_name
+
+    def _normalize_audio_stem(self, value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
