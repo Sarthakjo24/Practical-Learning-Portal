@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from __future__ import annotations
+
+import asyncio
 from pathlib import Path
+import logging
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import FileResponse
@@ -12,6 +16,12 @@ from slowapi.util import get_remote_address
 
 from app.api import admin, auth, candidate, evaluation, modules
 from app.core.config import settings
+from app.core.database import init_database
+from app.initial_data import seed_default_data
+from app.services.processing_service import (
+    enqueue_pending_processing_sessions,
+    run_processing_requeue_loop,
+)
 
 
 limiter = Limiter(key_func=get_remote_address, default_limits=[settings.api_rate_limit])
@@ -83,6 +93,29 @@ def create_app() -> FastAPI:
             if asset_response is not None:
                 return asset_response
             return FileResponse(index_file)
+
+    @app.on_event("startup")
+    async def _initialize_database() -> None:
+        await init_database()
+        await seed_default_data()
+        pending_count = await enqueue_pending_processing_sessions()
+        if pending_count:
+            logging.getLogger(__name__).info(
+                "Requeued %d pending transcription/evaluation sessions on startup.", pending_count
+            )
+
+        app.state.processing_requeue_task = asyncio.create_task(run_processing_requeue_loop())
+
+    @app.on_event("shutdown")
+    async def _shutdown_requeue_loop() -> None:
+        task = getattr(app.state, "processing_requeue_task", None)
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
     return app
 
 

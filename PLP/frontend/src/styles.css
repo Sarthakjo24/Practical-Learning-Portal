@@ -100,6 +100,18 @@ button {
   align-items: stretch;
 }
 
+.hero-grid-centered {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 60vh;
+}
+
+.hero-centered {
+  text-align: center;
+  max-width: 600px;
+}
+
 .panel,
 .state-card,
 .detail-panel,
@@ -184,6 +196,10 @@ button {
   gap: 1rem;
 }
 
+.hero-centered .hero-actions {
+  justify-content: center;
+}
+
 .state-card,
 .detail-panel,
 .table-panel,
@@ -261,13 +277,14 @@ button {
 .table {
   width: 100%;
   border-collapse: collapse;
+  border: 1px solid #000;
 }
 
 .table th,
 .table td {
   padding: 0.9rem 0.7rem;
   text-align: left;
-  border-bottom: 1px solid var(--line);
+  border: 1px solid #000;
   vertical-align: top;
 }
 
@@ -276,6 +293,22 @@ button {
   font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+.table .sub-header th {
+  border-top: none;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.table .scores-header {
+  text-align: center;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
 }
 
 .table button {

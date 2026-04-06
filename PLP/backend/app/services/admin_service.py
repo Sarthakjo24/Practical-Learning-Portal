@@ -34,6 +34,7 @@ class AdminService:
                 selectinload(CandidateSession.module),
                 selectinload(CandidateSession.manual_scores),
                 selectinload(CandidateSession.answers).selectinload(CandidateAnswer.ai_evaluation),
+                selectinload(CandidateSession.answers).selectinload(CandidateAnswer.transcript),
             )
             .order_by(CandidateSession.login_at.desc())
         )
@@ -66,7 +67,7 @@ class AdminService:
                     module_title=session.module.title,
                     status=session.status.value,
                     ai_score=session.ai_score,
-                    evaluator_score=float(latest_manual.manual_score or 0) if latest_manual else None,
+                    evaluator_score=round(float(latest_manual.manual_score or 0), 2) if latest_manual else None,
                     submission_time=session.submitted_at,
                     login_time=session.login_at,
                 )
@@ -147,7 +148,7 @@ class AdminService:
                 {
                     "id": str(latest_manual.id),
                     "admin_email": latest_manual.admin_email,
-                    "manual_score": float(latest_manual.manual_score or 0),
+                    "manual_score": round(float(latest_manual.manual_score or 0), 2),
                     "notes": latest_manual.notes,
                     "created_at": latest_manual.created_at,
                 }
@@ -171,7 +172,7 @@ class AdminService:
             manual_score = AdminScore(session_id=int(session_id))
             self.db.add(manual_score)
 
-        manual_score.manual_score = score
+        manual_score.manual_score = round(score, 2)
         manual_score.notes = notes
         manual_score.admin_email = admin_email
 

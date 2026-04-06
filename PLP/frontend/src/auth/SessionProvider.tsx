@@ -7,7 +7,7 @@ interface SessionContextValue {
   loading: boolean;
   refreshSession: () => Promise<void>;
   login: (provider: "google" | "microsoft", nextPath?: string) => void;
-  logout: () => Promise<void>;
+  logout: (redirectPath?: string) => Promise<void>;
 }
 
 const SessionContext = createContext<SessionContextValue | undefined>(undefined);
@@ -31,10 +31,10 @@ export function SessionProvider({ children }: PropsWithChildren) {
     void refreshSession();
   }, [refreshSession]);
 
-  const logout = useCallback(async () => {
+  const logout = useCallback(async (redirectPath = "/login") => {
     await api.logout();
     setUser(null);
-    window.location.href = "/login";
+    window.location.href = redirectPath;
   }, []);
 
   const login = useCallback((provider: "google" | "microsoft", nextPath = "/dashboard") => {

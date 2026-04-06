@@ -89,7 +89,7 @@ class EvaluationConfig(Base):
 class Question(Base):
     __tablename__ = "questions"
 
-    id: Mapped[int] = mapped_column("question_id", Integer, primary_key=True, autoincrement=False)
+    id: Mapped[int] = mapped_column("question_id", Integer, primary_key=True, autoincrement=True)
     module_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("modules.module_id", ondelete="CASCADE"),

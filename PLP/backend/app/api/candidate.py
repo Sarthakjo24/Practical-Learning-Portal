@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from starlette.datastructures import UploadFile as StarletteUploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
 
 from app.api.deps import CurrentUser, DBSession
 from app.schemas.candidate import (
@@ -54,20 +55,34 @@ async def upload_audio(
 @router.post("/sessions/{session_id}/submit", response_model=SubmitSessionResponse)
 async def submit_session(
     session_id: str,
+    request: Request,
     db: DBSession,
     user: CurrentUser,
-    question_ids: list[str] = Form(default=[]),
-    files: list[UploadFile] = File(default=[]),
 ) -> SubmitSessionResponse:
-    if len(question_ids) != len(files):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Each uploaded recording must include a matching question id.",
+    service = SessionService(db)
+    existing_session = await service.get_owned_session(user.id, session_id)
+    if existing_session.submitted_at is not None:
+        return SubmitSessionResponse(
+            session_id=str(existing_session.id),
+            status=existing_session.status.value,
+            message="Responses already submitted.",
         )
 
-    service = SessionService(db)
-    for question_id, file in zip(question_ids, files):
-        await service.upload_answer_audio(user.id, session_id, question_id, file)
+    content_type = request.headers.get("content-type", "").lower()
+
+    if content_type.startswith("multipart/form-data"):
+        form = await request.form()
+        question_ids = [str(value) for value in form.getlist("question_ids")]
+        files = [value for value in form.getlist("files") if isinstance(value, StarletteUploadFile)]
+
+        if len(question_ids) != len(files):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Each uploaded recording must include a matching question id.",
+            )
+
+        for question_id, file in zip(question_ids, files):
+            await service.upload_answer_audio(user.id, session_id, question_id, file)
 
     session = await service.submit_session(user.id, session_id)
     return SubmitSessionResponse(

@@ -79,7 +79,7 @@ export function AdminResponsePage() {
         .sort((left, right) => left.display_order - right.display_order)
         .map((answer) => (
           <div className="module-card" key={answer.answer_id}>
-            <h2 className="section-title">{answer.question_title}</h2>
+            <h2 className="section-title">Question: {answer.question_title || answer.question_code}</h2>
             <div className="badge-row">
               <span className="pill">Question ID: {answer.question_id}</span>
               <span className="pill">Question code: {answer.question_code}</span>
@@ -109,6 +109,65 @@ export function AdminResponsePage() {
               <strong>Transcript</strong>
               <p className="muted">{answer.transcript_text ?? "Transcription pending."}</p>
             </div>
+
+            <div className="module-card">
+              <strong>Standard responses</strong>
+              {answer.standard_responses.length > 0 ? (
+                <ul>
+                  {answer.standard_responses.map((response, index) => (
+                    <li key={index}>{response}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="muted">No standard responses configured for this question.</p>
+              )}
+            </div>
+
+            {answer.evaluation ? (
+              <div className="module-card">
+                <h3 className="section-title">AI evaluation</h3>
+                <div className="badge-row">
+                  <span className="pill">Courtesy: {answer.evaluation.courtesy_score}</span>
+                  <span className="pill">Respect: {answer.evaluation.respect_score}</span>
+                  <span className="pill">Empathy: {answer.evaluation.empathy_score}</span>
+                  <span className="pill">Tone: {answer.evaluation.tone_score}</span>
+                </div>
+                <div className="badge-row">
+                  <span className="pill">Communication: {answer.evaluation.communication_clarity_score}</span>
+                  <span className="pill">Engagement: {answer.evaluation.engagement_score}</span>
+                  <span className="pill">Handling: {answer.evaluation.problem_handling_approach_score}</span>
+                </div>
+                <div className="spacer" />
+                <div>
+                  <strong>Summary</strong>
+                  <p className="muted">{answer.evaluation.final_summary}</p>
+                </div>
+                {answer.evaluation.strengths.length > 0 ? (
+                  <div>
+                    <strong>Strengths</strong>
+                    <ul>
+                      {answer.evaluation.strengths.map((item, index) => (
+                        <li key={index}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {answer.evaluation.improvement_areas.length > 0 ? (
+                  <div>
+                    <strong>Improvement areas</strong>
+                    <ul>
+                      {answer.evaluation.improvement_areas.map((item, index) => (
+                        <li key={index}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="module-card">
+                <p className="muted">AI evaluation is pending for this response.</p>
+              </div>
+            )}
           </div>
         ))}
     </section>

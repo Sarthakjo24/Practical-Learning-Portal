@@ -64,8 +64,18 @@ export const api = {
     );
   },
   submitSession: (sessionId: string, recordings: Record<string, File> = {}) => {
+    const pendingEntries = Object.entries(recordings);
+    if (pendingEntries.length === 0) {
+      return apiRequest<{ session_id: string; status: string; message: string }>(
+        `/candidate/sessions/${sessionId}/submit`,
+        {
+          method: "POST",
+        }
+      );
+    }
+
     const formData = new FormData();
-    for (const [questionId, file] of Object.entries(recordings)) {
+    for (const [questionId, file] of pendingEntries) {
       formData.append("question_ids", questionId);
       formData.append("files", file);
     }

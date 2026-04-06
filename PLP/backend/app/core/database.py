@@ -27,6 +27,11 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 
+async def init_database() -> None:
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+
 async def get_db() -> AsyncIterator[AsyncSession]:
     async with AsyncSessionLocal() as session:
         yield session

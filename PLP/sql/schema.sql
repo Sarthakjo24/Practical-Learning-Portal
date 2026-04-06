@@ -174,15 +174,15 @@ CREATE TABLE IF NOT EXISTS ai_evaluations (
         ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS admin_scores (
+CREATE TABLE IF NOT EXISTS admin_evaluations (
     id CHAR(36) PRIMARY KEY,
     session_id CHAR(36) NOT NULL,
     admin_email VARCHAR(191) NOT NULL,
-    manual_score DECIMAL(5,2) NOT NULL,
-    notes TEXT NULL,
-    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    INDEX idx_admin_scores_session_created (session_id, created_at),
-    CONSTRAINT fk_admin_scores_session
+    admin_score DECIMAL(5,2) NOT NULL,
+    feedback TEXT NULL,
+    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    INDEX idx_admin_evaluations_session_created (session_id, updated_at),
+    CONSTRAINT fk_admin_evaluations_session
         FOREIGN KEY (session_id) REFERENCES candidate_sessions (id)
         ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

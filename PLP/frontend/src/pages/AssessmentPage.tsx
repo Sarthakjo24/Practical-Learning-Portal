@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import { AudioQuestionCard } from "../components/AudioQuestionCard";
+import { useSession } from "../auth/SessionProvider";
 import type { CandidateSessionDetail } from "../types";
 
 export function AssessmentPage() {
   const { sessionId = "" } = useParams();
   const navigate = useNavigate();
+  const { logout } = useSession();
   const [session, setSession] = useState<CandidateSessionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -35,14 +37,61 @@ export function AssessmentPage() {
     }));
   }
 
+  function isAlreadySubmittedError(error: unknown): boolean {
+    const errorText = error instanceof Error ? error.message.toLowerCase() : "";
+    return errorText.includes("already submitted");
+  }
+
   async function handleSubmit() {
+    if (!window.confirm("Submit all responses? Once submitted, you will be logged out and redirected to the confirmation page.")) {
+      return;
+    }
+
     try {
       setSubmitting(true);
       setError(null);
-      await api.submitSession(sessionId, pendingRecordings);
+      try {
+        await api.submitSession(sessionId, pendingRecordings);
+      } catch (bulkSubmitError) {
+        if (isAlreadySubmittedError(bulkSubmitError)) {
+          setPendingRecordings({});
+          await logout(`/submitted/${sessionId}`);
+          return;
+        }
+
+        const pendingEntries = Object.entries(pendingRecordings);
+        if (pendingEntries.length === 0 || !session) {
+          throw bulkSubmitError;
+        }
+
+        for (const answer of session.answers) {
+          const pendingFile = pendingRecordings[answer.question_id];
+          if (!pendingFile) {
+            continue;
+          }
+
+          try {
+            await api.uploadAnswer(sessionId, answer.question_id, pendingFile);
+          } catch (uploadError) {
+            if (isAlreadySubmittedError(uploadError)) {
+              setPendingRecordings({});
+              await logout(`/submitted/${sessionId}`);
+              return;
+            }
+            throw uploadError;
+          }
+        }
+
+        await api.submitSession(sessionId);
+      }
       setPendingRecordings({});
-      navigate(`/submitted/${sessionId}`, { replace: true });
+      await logout(`/submitted/${sessionId}`);
     } catch (submitError) {
+      if (isAlreadySubmittedError(submitError)) {
+        setPendingRecordings({});
+        await logout(`/submitted/${sessionId}`);
+        return;
+      }
       setError(submitError instanceof Error ? submitError.message : "Submission failed.");
     } finally {
       setSubmitting(false);
@@ -95,6 +144,7 @@ export function AssessmentPage() {
         >
           {submitting ? "Submitting..." : "Submit assessment"}
         </button>
+        {error ? <p className="muted">{error}</p> : null}
       </div>
     </section>
   );

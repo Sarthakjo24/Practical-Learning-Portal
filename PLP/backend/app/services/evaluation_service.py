@@ -41,7 +41,28 @@ class EvaluationService:
             ],
         )
         content = response.choices[0].message.content or "{}"
-        return extract_json_object(content)
+        try:
+            return extract_json_object(content)
+        except ValueError:
+            return {
+                "total_score": 0,
+                "sentiment_breakdown": {
+                    "courtesy": 0,
+                    "respect": 0,
+                    "empathy": 0,
+                    "sympathy": 0,
+                    "tone": 0,
+                },
+                "handling_breakdown": {
+                    "communication_clarity": 0,
+                    "engagement": 0,
+                    "problem_handling_approach": 0,
+                },
+                "strengths": [],
+                "improvement_areas": [],
+                "final_summary": "Unable to parse evaluation result.",
+                "confidence_score": 0,
+            }
 
     def load_default_prompt_template(self) -> str:
         path: Path = settings.default_prompt_template_path

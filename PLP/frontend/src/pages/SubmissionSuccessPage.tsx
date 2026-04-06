@@ -1,12 +1,19 @@
+import { useEffect } from "react";
 import { useParams } from "react-router-dom";
 
 export function SubmissionSuccessPage() {
-  void useParams();
+  const { sessionId } = useParams();
+
+  useEffect(() => {
+    document.title = "Submission Complete";
+  }, []);
 
   return (
     <section className="dashboard-grid">
       <div className="panel">
-        <h1 className="page-title">thank you for the response , our team will connect with you via email for further process</h1>
+        <h1 className="page-title">THANK YOU !! YOUR TEST HAS BEEN SUBMITTED SUCCESSFULLY.</h1>
+        <p className="muted">SCORES WILL BE SHARED TO YOU LATER.</p>
+        {sessionId ? <p className="muted">Session ID: {sessionId}</p> : null}
       </div>
     </section>
   );

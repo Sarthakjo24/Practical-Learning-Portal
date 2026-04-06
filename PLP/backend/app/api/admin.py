@@ -50,7 +50,7 @@ async def set_manual_score(
     return ManualScoreResponse(
         id=str(manual_score.id),
         admin_email=manual_score.admin_email,
-        manual_score=float(manual_score.manual_score),
+        manual_score=round(float(manual_score.manual_score), 2),
         notes=manual_score.notes,
         created_at=manual_score.created_at,
     )

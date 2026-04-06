@@ -54,14 +54,7 @@ function AppShell() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/submitted/:sessionId"
-            element={
-              <ProtectedRoute>
-                <SubmissionSuccessPage />
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/submitted/:sessionId" element={<SubmissionSuccessPage />} />
           <Route
             path="/admin"
             element={
