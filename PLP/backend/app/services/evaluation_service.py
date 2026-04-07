@@ -82,10 +82,10 @@ class EvaluationService:
             if response.is_active
         ]
         return (
-            template.replace("{{MODULE_TITLE}}", module.title)
-            .replace("{{QUESTION_TITLE}}", question.title)
-            .replace("{{QUESTION_TRANSCRIPT}}", question.scenario_transcript)
-            .replace("{{CANDIDATE_TRANSCRIPT}}", transcript_text)
+            template.replace("{{MODULE_TITLE}}", module.title or "")
+            .replace("{{QUESTION_TITLE}}", question.title or "")
+            .replace("{{QUESTION_TRANSCRIPT}}", question.scenario_transcript or "")
+            .replace("{{CANDIDATE_TRANSCRIPT}}", transcript_text or "")
             .replace(
                 "{{STANDARD_RESPONSES_LIST}}",
                 json.dumps(standard_responses, ensure_ascii=False, indent=2),

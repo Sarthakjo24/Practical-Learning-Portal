@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from __future__ import annotations
-
 import asyncio
-from pathlib import Path
 import logging
+from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, status
-from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -26,6 +25,8 @@ from app.services.processing_service import (
 
 limiter = Limiter(key_func=get_remote_address, default_limits=[settings.api_rate_limit])
 
+_logger = logging.getLogger(__name__)
+
 
 def _frontend_asset_response(frontend_dist: Path, requested_path: str) -> FileResponse | None:
     cleaned = requested_path.strip("/")
@@ -33,10 +34,31 @@ def _frontend_asset_response(frontend_dist: Path, requested_path: str) -> FileRe
         index_file = frontend_dist / "index.html"
         return FileResponse(index_file) if index_file.exists() else None
 
-    candidate = (frontend_dist / cleaned).resolve()
-    if candidate.is_file() and str(candidate).startswith(str(frontend_dist.resolve())):
-        return FileResponse(candidate)
+    resolved = (frontend_dist / cleaned).resolve()
+    if resolved.is_file() and str(resolved).startswith(str(frontend_dist.resolve())):
+        return FileResponse(resolved)
     return None
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):  # type: ignore[type-arg]
+    # --- startup ---
+    await init_database()
+    await seed_default_data()
+    pending_count = await enqueue_pending_processing_sessions()
+    if pending_count:
+        _logger.info("Requeued %d pending transcription/evaluation sessions on startup.", pending_count)
+    requeue_task = asyncio.create_task(run_processing_requeue_loop())
+    app.state.processing_requeue_task = requeue_task
+
+    yield
+
+    # --- shutdown ---
+    requeue_task.cancel()
+    try:
+        await requeue_task
+    except asyncio.CancelledError:
+        pass
 
 
 def create_app() -> FastAPI:
@@ -47,6 +69,7 @@ def create_app() -> FastAPI:
         version="1.0.0",
         docs_url="/docs",
         redoc_url="/redoc",
+        lifespan=_lifespan,
     )
 
     app.state.limiter = limiter
@@ -93,28 +116,6 @@ def create_app() -> FastAPI:
             if asset_response is not None:
                 return asset_response
             return FileResponse(index_file)
-
-    @app.on_event("startup")
-    async def _initialize_database() -> None:
-        await init_database()
-        await seed_default_data()
-        pending_count = await enqueue_pending_processing_sessions()
-        if pending_count:
-            logging.getLogger(__name__).info(
-                "Requeued %d pending transcription/evaluation sessions on startup.", pending_count
-            )
-
-        app.state.processing_requeue_task = asyncio.create_task(run_processing_requeue_loop())
-
-    @app.on_event("shutdown")
-    async def _shutdown_requeue_loop() -> None:
-        task = getattr(app.state, "processing_requeue_task", None)
-        if task is not None:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
 
     return app
 

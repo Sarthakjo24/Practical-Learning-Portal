@@ -71,34 +71,38 @@ async def _process_candidate_session(session_id: int) -> None:
 
             sentiment = evaluation_payload.get("sentiment_breakdown", {})
             handling = evaluation_payload.get("handling_breakdown", {})
-            communication = float(
-                handling.get("communication_clarity")
-                or handling.get("engagement")
-                or handling.get("problem_handling_approach")
-                or 0
-            )
+
+            # Use explicit .get() per key — avoid or-chaining which treats valid 0 scores as falsy
+            communication_clarity = float(handling.get("communication_clarity") or 0)
+
+            total_score = float(evaluation_payload.get("total_score") or 0)
+            courtesy = float(sentiment.get("courtesy") or 0)
+            respect = float(sentiment.get("respect") or 0)
+            empathy = float(sentiment.get("empathy") or 0)
+            tone = float(sentiment.get("tone") or 0)
+            final_summary = evaluation_payload.get("final_summary", "") or ""
 
             if answer.ai_evaluation is None:
                 answer.ai_evaluation = AIEvaluation(
                     answer_id=answer.id,
-                    total_score=float(evaluation_payload.get("total_score", 0)),
-                    courtesy_score=float(sentiment.get("courtesy", 0)),
-                    respect_score=float(sentiment.get("respect", 0)),
-                    empathy_score=float(sentiment.get("empathy", 0)),
-                    tone_score=float(sentiment.get("tone", 0)),
-                    communication_clarity_score=communication,
-                    final_summary=evaluation_payload.get("final_summary", ""),
+                    total_score=total_score,
+                    courtesy_score=courtesy,
+                    respect_score=respect,
+                    empathy_score=empathy,
+                    tone_score=tone,
+                    communication_clarity_score=communication_clarity,
+                    final_summary=final_summary,
                 )
             else:
-                answer.ai_evaluation.total_score = float(evaluation_payload.get("total_score", 0))
-                answer.ai_evaluation.courtesy_score = float(sentiment.get("courtesy", 0))
-                answer.ai_evaluation.respect_score = float(sentiment.get("respect", 0))
-                answer.ai_evaluation.empathy_score = float(sentiment.get("empathy", 0))
-                answer.ai_evaluation.tone_score = float(sentiment.get("tone", 0))
-                answer.ai_evaluation.communication_clarity_score = communication
-                answer.ai_evaluation.final_summary = evaluation_payload.get("final_summary", "")
+                answer.ai_evaluation.total_score = total_score
+                answer.ai_evaluation.courtesy_score = courtesy
+                answer.ai_evaluation.respect_score = respect
+                answer.ai_evaluation.empathy_score = empathy
+                answer.ai_evaluation.tone_score = tone
+                answer.ai_evaluation.communication_clarity_score = communication_clarity
+                answer.ai_evaluation.final_summary = final_summary
 
-            answer.ai_evaluation.strengths = evaluation_payload.get("strengths", [])
-            answer.ai_evaluation.improvement_areas = evaluation_payload.get("improvement_areas", [])
+            answer.ai_evaluation.strengths = evaluation_payload.get("strengths", []) or []
+            answer.ai_evaluation.improvement_areas = evaluation_payload.get("improvement_areas", []) or []
 
         await db.commit()

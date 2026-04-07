@@ -1,64 +1,63 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import subprocess
 import sys
-import time
 from pathlib import Path
 
 from app.core.config import settings
 
+# Path to the isolated worker script
+_WORKER_SCRIPT = Path(__file__).parent.parent / "utils" / "whisper_transcribe.py"
+
 
 class TranscriptionService:
-    _model: object | None = None
-
-    def _get_model(self) -> object:
-        if self.__class__._model is None:
-            from faster_whisper import WhisperModel
-
-            self.__class__._model = WhisperModel(
-                settings.faster_whisper_model,
-                device=settings.faster_whisper_device,
-                compute_type=settings.faster_whisper_compute_type,
-            )
-        return self.__class__._model
-
     async def transcribe(self, storage_key: str) -> dict:
         audio_path = (settings.storage_dir / storage_key).resolve()
+        return await asyncio.to_thread(self._transcribe_subprocess, audio_path)
+
+    def _transcribe_subprocess(self, audio_path: Path) -> dict:
+        # On Windows, force CPU + float32 to avoid CTranslate2 access violations.
+        # Even though we run in a subprocess (which isolates crashes from the
+        # Celery worker), these settings also prevent the subprocess from hanging
+        # waiting for GPU initialisation that doesn't exist.
         if sys.platform == "win32":
-            return await asyncio.to_thread(self._transcribe_openai, audio_path)
-        return await asyncio.to_thread(self._transcribe_sync, audio_path)
+            device = "cpu"
+            compute_type = "float32"
+        else:
+            device = settings.faster_whisper_device
+            compute_type = settings.faster_whisper_compute_type
 
-    def _transcribe_openai(self, audio_path: Path) -> dict:
-        if not settings.openai_api_key or settings.openai_api_key == "sk-placeholder":
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(_WORKER_SCRIPT),
+                    str(audio_path),
+                    settings.faster_whisper_model,
+                    device,
+                    compute_type,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=300,  # 5-minute hard limit per audio file
+            )
+        except subprocess.TimeoutExpired as exc:
             raise RuntimeError(
-                "Transcription is not supported on Windows with the local faster-whisper backend. "
-                "Set OPENAI_API_KEY in backend/.env or run the worker on Linux/WSL."
+                f"Transcription subprocess timed out after 300 s for {audio_path.name}"
+            ) from exc
+
+        if result.returncode != 0:
+            # Include stderr so the Celery retry log is useful
+            stderr = result.stderr.strip()
+            raise RuntimeError(
+                f"Transcription subprocess exited with code {result.returncode}"
+                + (f": {stderr}" if stderr else "")
             )
 
-        import openai
+        stdout = result.stdout.strip()
+        if not stdout:
+            raise RuntimeError("Transcription subprocess produced no output.")
 
-        openai.api_key = settings.openai_api_key
-        with open(audio_path, "rb") as audio_file:
-            response = openai.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file,
-            )
-
-        return {
-            "transcript_text": response.get("text", ""),
-            "detected_language": response.get("language", None),
-            "model_name": "openai/whisper-1",
-            "processing_seconds": 0.0,
-        }
-
-    def _transcribe_sync(self, audio_path: Path) -> dict:
-        started = time.perf_counter()
-        model = self._get_model()
-        segments, info = model.transcribe(str(audio_path))
-        transcript = " ".join(segment.text.strip() for segment in segments if segment.text).strip()
-        return {
-            "transcript_text": transcript,
-            "detected_language": getattr(info, "language", None),
-            "model_name": settings.faster_whisper_model,
-            "processing_seconds": round(time.perf_counter() - started, 3),
-        }
+        return json.loads(stdout)

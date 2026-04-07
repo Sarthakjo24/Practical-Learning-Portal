@@ -103,7 +103,6 @@ async def seed_default_data() -> None:
         existing_question_rows = await session.execute(select(Question).where(Question.module_id == module.id))
         existing_questions = existing_question_rows.scalars().all()
         existing_audio_keys = {question.audio_storage_key for question in existing_questions}
-        next_id = max((question.id for question in existing_questions if question.id is not None), default=0) + 1
 
         for question_definition in DEFAULT_QUESTIONS:
             file_name = question_definition["file_name"]
@@ -113,7 +112,6 @@ async def seed_default_data() -> None:
                 continue
 
             question = Question(
-                id=next_id,
                 module_id=module.id,
                 scenario_transcript=question_definition["scenario_transcript"],
                 audio_storage_key=file_name,
@@ -121,6 +119,5 @@ async def seed_default_data() -> None:
             session.add(question)
             await session.flush()
             session.add_all(_build_standard_responses(question))
-            next_id += 1
 
         await session.commit()
