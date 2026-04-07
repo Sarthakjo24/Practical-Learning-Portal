@@ -16,3 +16,12 @@ celery_app.conf.update(
     task_track_started=True,
     result_expires=3600,
 )
+
+# Import tasks to register them with Celery (after celery_app is defined)
+from app.workers import tasks  # noqa: F401
+
+celery_app.conf.update(
+    task_default_queue="assessment",
+    task_track_started=True,
+    result_expires=3600,
+)

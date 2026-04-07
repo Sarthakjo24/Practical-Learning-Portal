@@ -108,5 +108,9 @@ export const api = {
       const text = await response.text();
       throw new Error(text || "Delete failed");
     }
-  }
+  },
+  reprocessSession: (sessionId: string) =>
+    apiRequest<{ message: string }>(`/admin/candidates/${sessionId}/reprocess`, {
+      method: "POST"
+    })
 };

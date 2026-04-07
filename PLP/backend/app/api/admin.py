@@ -9,6 +9,7 @@ from app.schemas.admin import (
     ManualScoreRequest,
     ManualScoreResponse,
 )
+from app.schemas.auth import AuthMessageResponse
 from app.services.admin_service import AdminService
 
 
@@ -56,7 +57,21 @@ async def set_manual_score(
     )
 
 
-@router.delete("/candidates/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_candidate(session_id: str, db: DBSession, admin_user: CurrentAdminUser) -> Response:
-    await AdminService(db).delete_candidate(session_id, admin_user.email)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/candidates/{session_id}/reprocess", response_model=AuthMessageResponse)
+async def reprocess_session(session_id: str, db: DBSession, _: CurrentAdminUser) -> AuthMessageResponse:
+    from app.workers.tasks import _process_candidate_session, process_candidate_session
+    import asyncio
+
+    try:
+        process_candidate_session.delay(session_id)
+        return AuthMessageResponse(message="Reprocessing started for session.")
+    except Exception:
+        # Fallback to synchronous execution if Celery is not available
+        asyncio.create_task(_process_candidate_session(int(session_id)))
+        return AuthMessageResponse(message="Reprocessing started for session (synchronous fallback).")
+
+
+@router.delete("/candidates/{session_id}", response_model=AuthMessageResponse)
+async def delete_candidate(session_id: str, db: DBSession, admin_user: CurrentAdminUser) -> AuthMessageResponse:
+    await AdminService(db).delete_candidate(session_id=session_id, admin_email=admin_user.email)
+    return AuthMessageResponse(message="Candidate session deleted.")

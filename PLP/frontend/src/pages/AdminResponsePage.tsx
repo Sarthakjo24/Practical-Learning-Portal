@@ -8,6 +8,11 @@ export function AdminResponsePage() {
   const [detail, setDetail] = useState<AdminCandidateDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [manualScore, setManualScore] = useState<number>(0);
+  const [manualNotes, setManualNotes] = useState<string>("");
+  const [savingManualScore, setSavingManualScore] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [reprocessing, setReprocessing] = useState(false);
 
   useEffect(() => {
     async function loadDetail() {
@@ -16,6 +21,8 @@ export function AdminResponsePage() {
         setError(null);
         const response = await api.adminDetail(sessionId);
         setDetail(response);
+        setManualScore(response.latest_manual_score?.manual_score ?? 0);
+        setManualNotes(response.latest_manual_score?.notes ?? "");
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Failed to load candidate response.");
       } finally {
@@ -25,6 +32,44 @@ export function AdminResponsePage() {
 
     void loadDetail();
   }, [sessionId]);
+
+  async function handleReprocess() {
+    if (!detail) {
+      return;
+    }
+
+    try {
+      setReprocessing(true);
+      setError(null);
+      setSuccessMessage(null);
+      await api.reprocessSession(sessionId);
+      setSuccessMessage("Reprocessing started. Refresh the page in a few minutes to see updates.");
+    } catch (reprocessError) {
+      setError(reprocessError instanceof Error ? reprocessError.message : "Failed to start reprocessing.");
+    } finally {
+      setReprocessing(false);
+    }
+  }
+
+  async function handleSaveManualScore() {
+    if (!detail) {
+      return;
+    }
+
+    try {
+      setSavingManualScore(true);
+      setError(null);
+      setSuccessMessage(null);
+      await api.setManualScore(sessionId, manualScore, manualNotes);
+      setSuccessMessage("Manual score saved successfully.");
+      const refreshed = await api.adminDetail(sessionId);
+      setDetail(refreshed);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Failed to save manual score.");
+    } finally {
+      setSavingManualScore(false);
+    }
+  }
 
   if (loading) {
     return <div className="state-card">Loading candidate response...</div>;
@@ -170,6 +215,52 @@ export function AdminResponsePage() {
             )}
           </div>
         ))}
+
+      <div className="panel">
+        <h2 className="section-title">Manual Scoring</h2>
+        {successMessage ? <p className="success">{successMessage}</p> : null}
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleSaveManualScore();
+          }}
+        >
+          <div className="form-group">
+            <label htmlFor="manual-score">Manual Score (0-100)</label>
+            <input
+              id="manual-score"
+              type="number"
+              min="0"
+              max="100"
+              value={manualScore}
+              onChange={(event) => setManualScore(Number(event.target.value))}
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="manual-notes">Notes</label>
+            <textarea
+              id="manual-notes"
+              value={manualNotes}
+              onChange={(event) => setManualNotes(event.target.value)}
+              rows={4}
+            />
+          </div>
+          <button type="submit" disabled={savingManualScore}>
+            {savingManualScore ? "Saving..." : "Save Manual Score"}
+          </button>
+        </form>
+      </div>
+
+      <div className="panel">
+        <h2 className="section-title">Reprocess Session</h2>
+        <p className="muted">
+          If transcription or evaluation failed, you can reprocess this session to retry the background tasks.
+        </p>
+        <button onClick={() => void handleReprocess()} disabled={reprocessing}>
+          {reprocessing ? "Reprocessing..." : "Reprocess Session"}
+        </button>
+      </div>
     </section>
   );
 }
