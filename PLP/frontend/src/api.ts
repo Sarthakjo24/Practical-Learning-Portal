@@ -112,5 +112,9 @@ export const api = {
   reprocessSession: (sessionId: string) =>
     apiRequest<{ message: string }>(`/admin/candidates/${sessionId}/reprocess`, {
       method: "POST"
+    }),
+  reevaluateAnswer: (answerId: string) =>
+    apiRequest<{ message: string }>(`/admin/answers/${answerId}/reevaluate`, {
+      method: "POST"
     })
 };

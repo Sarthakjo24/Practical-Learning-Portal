@@ -44,7 +44,11 @@ class Settings(BaseSettings):
 
     openai_api_key: str = "sk-placeholder"
     openai_model: str = "gpt-4.1-mini"
+    openai_eval_model: str | None = None
+    openai_eval_max_concurrent: int = 2
     openai_timeout_seconds: int = 45
+    openai_transcribe_model: str = "gpt-4o-mini-transcribe"
+    healthcheck_openai: bool = False
 
     auth0_domain: str = "example.us.auth0.com"
     auth0_client_id: str = "auth0-client-id"
@@ -73,6 +77,14 @@ class Settings(BaseSettings):
     db_name: str = "practical_learning_portal"
 
     redis_url: str = "redis://localhost:6379/0"
+    eval_max_workers: int = 4
+    eval_requeue_enabled: bool = True
+    eval_requeue_interval_seconds: int = 300
+    eval_requeue_batch_size: int = 25
+    eval_requeue_lock_ttl_seconds: int = 55
+    eval_requeue_max_attempts: int = 5
+    eval_requeue_attempt_ttl_seconds: int = 86400
+    eval_requeue_session_age_seconds: int = 60
     storage_path: str | None = None
     question_audio_path: str | None = None
     prompt_template_path: str | None = None
@@ -88,8 +100,9 @@ class Settings(BaseSettings):
     api_rate_limit: str = "100/minute"
     sql_echo: bool = False
 
+    use_faster_whisper: bool = True
     faster_whisper_model: str = "small"
-    faster_whisper_device: str = "auto"
+    faster_whisper_device: str = "cpu"
     faster_whisper_compute_type: str = "int8"
 
     @field_validator("allowed_audio_extensions", mode="before")
@@ -164,6 +177,10 @@ class Settings(BaseSettings):
     @property
     def auth0_issuer(self) -> str:
         return f"https://{self.auth0_domain}/"
+
+    @property
+    def effective_openai_eval_model(self) -> str:
+        return (self.openai_eval_model or self.openai_model).strip()
 
     @property
     def database_url(self) -> str:

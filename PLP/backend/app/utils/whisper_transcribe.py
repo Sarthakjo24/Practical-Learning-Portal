@@ -41,7 +41,8 @@ def main() -> None:
         "model_name": model_name,
         "processing_seconds": round(time.perf_counter() - started, 3),
     }
-    print(json.dumps(result, ensure_ascii=False))
+    # Use ASCII-safe JSON to avoid Windows cp1252 stdout encoding errors.
+    print(json.dumps(result, ensure_ascii=True))
 
 
 if __name__ == "__main__":

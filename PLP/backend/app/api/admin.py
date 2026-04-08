@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, HTTPException, Query, status
+from sqlalchemy import select
 
 from app.api.deps import CurrentAdminUser, DBSession
+from app.models.answer import CandidateAnswer
+from app.models.sessions import CandidateSession
 from app.schemas.admin import (
     AdminCandidateDetail,
     AdminCandidateListResponse,
@@ -11,6 +14,7 @@ from app.schemas.admin import (
 )
 from app.schemas.auth import AuthMessageResponse
 from app.services.admin_service import AdminService
+from app.services.processing_service import dispatch_session_processing
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -59,16 +63,50 @@ async def set_manual_score(
 
 @router.post("/candidates/{session_id}/reprocess", response_model=AuthMessageResponse)
 async def reprocess_session(session_id: str, db: DBSession, _: CurrentAdminUser) -> AuthMessageResponse:
-    from app.workers.tasks import _process_candidate_session, process_candidate_session
-    import asyncio
-
     try:
-        process_candidate_session.delay(session_id)
-        return AuthMessageResponse(message="Reprocessing started for session.")
-    except Exception:
-        # Fallback to synchronous execution if Celery is not available
-        asyncio.create_task(_process_candidate_session(int(session_id)))
-        return AuthMessageResponse(message="Reprocessing started for session (synchronous fallback).")
+        parsed_session_id = int(session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid session id.") from exc
+
+    session_row = await db.execute(
+        select(CandidateSession.id, CandidateSession.submitted_at).where(CandidateSession.id == parsed_session_id)
+    )
+    session_data = session_row.one_or_none()
+    if session_data is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate session not found.")
+    if session_data[1] is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Session has not been submitted yet.",
+        )
+
+    mode = await dispatch_session_processing(parsed_session_id)
+    return AuthMessageResponse(message=f"Reprocessing started for session via {mode}.")
+
+
+@router.post("/answers/{answer_id}/reevaluate", response_model=AuthMessageResponse)
+async def reevaluate_answer(answer_id: str, db: DBSession, _: CurrentAdminUser) -> AuthMessageResponse:
+    try:
+        parsed_answer_id = int(answer_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid answer id.") from exc
+
+    result = await db.execute(
+        select(CandidateAnswer.session_id, CandidateSession.submitted_at)
+        .join(CandidateSession, CandidateSession.id == CandidateAnswer.session_id)
+        .where(CandidateAnswer.id == parsed_answer_id)
+    )
+    row = result.one_or_none()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate answer not found.")
+    if row[1] is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Session has not been submitted yet.",
+        )
+
+    mode = await dispatch_session_processing(int(row[0]))
+    return AuthMessageResponse(message=f"Reevaluation started for response via {mode}.")
 
 
 @router.delete("/candidates/{session_id}", response_model=AuthMessageResponse)

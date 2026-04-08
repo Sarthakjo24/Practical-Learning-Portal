@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, select
 
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
@@ -104,20 +102,29 @@ async def seed_default_data() -> None:
         existing_questions = existing_question_rows.scalars().all()
         existing_audio_keys = {question.audio_storage_key for question in existing_questions}
 
-        for question_definition in DEFAULT_QUESTIONS:
-            file_name = question_definition["file_name"]
-            if file_name not in available_audio_files:
-                continue
-            if file_name in existing_audio_keys:
-                continue
+        # Only seed default questions for brand new modules. If questions already
+        # exist, keep operator-managed DB changes as source of truth.
+        if not existing_questions:
+            for question_definition in DEFAULT_QUESTIONS:
+                file_name = question_definition["file_name"]
+                if file_name not in available_audio_files:
+                    continue
+                if file_name in existing_audio_keys:
+                    continue
 
-            question = Question(
-                module_id=module.id,
-                scenario_transcript=question_definition["scenario_transcript"],
-                audio_storage_key=file_name,
-            )
-            session.add(question)
-            await session.flush()
-            session.add_all(_build_standard_responses(question))
+                question = Question(
+                    module_id=module.id,
+                    scenario_transcript=question_definition["scenario_transcript"],
+                    audio_storage_key=file_name,
+                )
+                session.add(question)
+                await session.flush()
+                session.add_all(_build_standard_responses(question))
+
+        # Keep module question_count aligned with real DB count.
+        count_result = await session.execute(
+            select(func.count(Question.id)).where(Question.module_id == module.id)
+        )
+        module.question_count = int(count_result.scalar_one() or 0)
 
         await session.commit()

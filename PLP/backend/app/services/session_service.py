@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import secrets
 
@@ -17,6 +16,7 @@ from app.models.user import User
 from app.schemas.candidate import CandidateAnswerDetail, CandidateSessionDetail, CandidateSessionQuestion
 from app.services.audio_service import AudioService
 from app.services.module_service import ModuleService
+from app.services.processing_service import dispatch_session_processing
 from app.utils.helpers import utcnow
 
 
@@ -31,7 +31,14 @@ class SessionService:
 
     async def start_session(self, user: User, module_slug: str) -> CandidateSession:
         module = await self.module_service.get_module_by_slug(module_slug)
-        question_limit = settings.candidate_question_count
+        available_questions = await self.module_service.count_questions(module.id)
+        if available_questions <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No active questions are available for this module.",
+            )
+
+        question_limit = min(settings.candidate_question_count, available_questions)
         questions = await self.module_service.get_random_questions(module.id, question_limit)
         started_at = utcnow()
 
@@ -139,28 +146,34 @@ class SessionService:
 
         session.submitted_at = utcnow()
         await self.db.commit()
-        from app.workers.tasks import _process_candidate_session, process_candidate_session
-
-        try:
-            process_candidate_session.delay(str(session.id))
-        except Exception:
-            logger.exception("Celery dispatch failed for session %s. Falling back to in-process background task.", session.id)
-            asyncio.create_task(_process_candidate_session(int(session.id)))
+        mode = await dispatch_session_processing(int(session.id))
+        logger.info("Session %s submitted for processing via %s path.", session.id, mode)
         return session
 
     async def build_session_detail(self, session: CandidateSession) -> CandidateSessionDetail:
         answers = []
         for display_order, answer in enumerate(sorted(session.answers, key=lambda item: item.id), start=1):
             evaluation = answer.ai_evaluation
+            question = answer.question
+            question_id = int(getattr(answer, "question_id", 0) or 0)
+            fallback_code = f"Q-{question_id:03d}" if question_id > 0 else f"Q-MISSING-{answer.id}"
             answers.append(
                 CandidateAnswerDetail(
                     answer_id=str(answer.id),
-                    question_id=str(answer.question.id),
-                    question_code=answer.question.question_code,
-                    question_title=answer.question.title,
+                    question_id=str(question.id if question is not None else question_id),
+                    question_code=question.question_code if question is not None else fallback_code,
+                    question_title=(
+                        question.title
+                        if question is not None
+                        else f"Deleted question ({question_id})"
+                    ),
                     display_order=display_order,
                     status=answer.status.value,
-                    question_audio_url=self.audio_service.question_audio_url(answer.question.audio_storage_key),
+                    question_audio_url=(
+                        self.audio_service.question_audio_url(question.audio_storage_key)
+                        if question is not None
+                        else ""
+                    ),
                     audio_url=self.audio_service.candidate_audio_url(answer.audio_storage_key),
                     transcript_text=answer.transcript.transcript_text if answer.transcript else None,
                     standard_responses=[],
@@ -183,17 +196,27 @@ class SessionService:
         )
 
     def build_start_response(self, session: CandidateSession) -> dict:
-        questions = [
-            CandidateSessionQuestion(
-                question_id=str(answer.question.id),
-                question_code=answer.question.question_code,
-                title=answer.question.title,
-                scenario_transcript=answer.question.scenario_transcript or answer.question.title,
-                audio_url=self.audio_service.question_audio_url(answer.question.audio_storage_key),
-                display_order=index,
+        questions: list[CandidateSessionQuestion] = []
+        for answer in sorted(session.answers, key=lambda item: item.id):
+            question = answer.question
+            if question is None:
+                logger.warning(
+                    "Skipping missing question relation for answer_id=%s question_id=%s session_id=%s",
+                    answer.id,
+                    answer.question_id,
+                    session.id,
+                )
+                continue
+            questions.append(
+                CandidateSessionQuestion(
+                    question_id=str(question.id),
+                    question_code=question.question_code,
+                    title=question.title,
+                    scenario_transcript=question.scenario_transcript or question.title,
+                    audio_url=self.audio_service.question_audio_url(question.audio_storage_key),
+                    display_order=len(questions) + 1,
+                )
             )
-            for index, answer in enumerate(sorted(session.answers, key=lambda item: item.id), start=1)
-        ]
         return {
             "session_id": str(session.id),
             "candidate_id": session.user.candidate_code,
@@ -206,8 +229,23 @@ class SessionService:
     def _serialize_evaluation(self, evaluation) -> dict | None:
         if evaluation is None:
             return None
+        failure_markers = (
+            "evaluation failed:",
+            "audio processing failed:",
+            "unable to parse evaluation result.",
+        )
+        summary = str(evaluation.final_summary or "").strip()
+        if (
+            evaluation.total_score is None
+            or not summary
+            or summary.lower().startswith(failure_markers)
+            or len(evaluation.strengths) == 0
+            or len(evaluation.improvement_areas) == 0
+        ):
+            return None
+
         return {
-            "total_score": float(evaluation.total_score or 0),
+            "total_score": float(evaluation.total_score),
             "courtesy_score": float(evaluation.courtesy_score or 0),
             "respect_score": float(evaluation.respect_score or 0),
             "empathy_score": float(evaluation.empathy_score or 0),
@@ -218,6 +256,6 @@ class SessionService:
             "problem_handling_approach_score": float(evaluation.problem_handling_approach_score or 0),
             "strengths": evaluation.strengths,
             "improvement_areas": evaluation.improvement_areas,
-            "final_summary": evaluation.final_summary or "",
+            "final_summary": summary,
             "confidence_score": evaluation.confidence_score,
         }

@@ -17,6 +17,20 @@ class ModuleService:
         result = await self.db.execute(select(Module).where(Module.is_active.is_(True)).order_by(Module.title))
         return list(result.scalars().all())
 
+    async def count_questions(self, module_id: int) -> int:
+        result = await self.db.execute(select(func.count(Question.id)).where(Question.module_id == module_id))
+        return int(result.scalar_one() or 0)
+
+    async def count_questions_for_modules(self, module_ids: list[int]) -> dict[int, int]:
+        if not module_ids:
+            return {}
+        result = await self.db.execute(
+            select(Question.module_id, func.count(Question.id))
+            .where(Question.module_id.in_(module_ids))
+            .group_by(Question.module_id)
+        )
+        return {int(row[0]): int(row[1]) for row in result.all()}
+
     async def get_module_by_slug(self, module_slug: str) -> Module:
         modules = await self.list_active_modules()
         for module in modules:

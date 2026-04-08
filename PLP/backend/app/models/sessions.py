@@ -42,14 +42,34 @@ class CandidateSession(Base):
         order_by="desc(AdminScore.created_at)",
     )
 
+    @staticmethod
+    def _is_complete_evaluation(evaluation) -> bool:
+        if evaluation is None:
+            return False
+        failure_markers = (
+            "evaluation failed:",
+            "audio processing failed:",
+            "unable to parse evaluation result.",
+        )
+        summary = str(evaluation.final_summary or "").strip().lower()
+        if not summary or summary.startswith(failure_markers):
+            return False
+        if evaluation.total_score is None:
+            return False
+        if len(evaluation.strengths) == 0:
+            return False
+        if len(evaluation.improvement_areas) == 0:
+            return False
+        return True
+
     @property
     def status(self) -> SessionStatus:
         answers = list(self.answers or [])
         if self.submitted_at is None:
             return SessionStatus.IN_PROGRESS
-        if answers and all(answer.ai_evaluation is not None for answer in answers):
+        if answers and all(self._is_complete_evaluation(answer.ai_evaluation) for answer in answers):
             return SessionStatus.COMPLETED
-        if any(answer.transcript is not None for answer in answers):
+        if any(answer.transcript is not None or answer.ai_evaluation is not None for answer in answers):
             return SessionStatus.PROCESSING
         return SessionStatus.SUBMITTED
 
@@ -64,7 +84,13 @@ class CandidateSession(Base):
 
     @property
     def ai_score(self) -> float | None:
-        scores = [float(answer.ai_evaluation.total_score or 0) for answer in self.answers if answer.ai_evaluation]
+        scores = [
+            float(answer.ai_evaluation.total_score)
+            for answer in self.answers
+            if self._is_complete_evaluation(answer.ai_evaluation)
+            and answer.ai_evaluation is not None
+            and answer.ai_evaluation.total_score is not None
+        ]
         return round(mean(scores), 2) if scores else None
 
     @property

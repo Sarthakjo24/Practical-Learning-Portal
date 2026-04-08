@@ -13,24 +13,30 @@ export function AdminResponsePage() {
   const [savingManualScore, setSavingManualScore] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [reprocessing, setReprocessing] = useState(false);
+  const [reevaluatingAnswerId, setReevaluatingAnswerId] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function loadDetail() {
-      try {
+  async function loadDetail(showLoader = true) {
+    try {
+      if (showLoader) {
         setLoading(true);
-        setError(null);
-        const response = await api.adminDetail(sessionId);
-        setDetail(response);
-        setManualScore(response.latest_manual_score?.manual_score ?? 0);
-        setManualNotes(response.latest_manual_score?.notes ?? "");
-      } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : "Failed to load candidate response.");
-      } finally {
+      }
+      setError(null);
+      const response = await api.adminDetail(sessionId);
+      setDetail(response);
+      setManualScore(response.latest_manual_score?.manual_score ?? 0);
+      setManualNotes(response.latest_manual_score?.notes ?? "");
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Failed to load candidate response.");
+    } finally {
+      if (showLoader) {
         setLoading(false);
       }
     }
+  }
 
+  useEffect(() => {
     void loadDetail();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
   async function handleReprocess() {
@@ -42,12 +48,32 @@ export function AdminResponsePage() {
       setReprocessing(true);
       setError(null);
       setSuccessMessage(null);
-      await api.reprocessSession(sessionId);
-      setSuccessMessage("Reprocessing started. Refresh the page in a few minutes to see updates.");
+      const response = await api.reprocessSession(sessionId);
+      setSuccessMessage(response.message || "Reprocessing started. Refresh in a few minutes to see updates.");
+      await loadDetail(false);
     } catch (reprocessError) {
       setError(reprocessError instanceof Error ? reprocessError.message : "Failed to start reprocessing.");
     } finally {
       setReprocessing(false);
+    }
+  }
+
+  async function handleReevaluateAnswer(answerId: string) {
+    if (!detail) {
+      return;
+    }
+
+    try {
+      setReevaluatingAnswerId(answerId);
+      setError(null);
+      setSuccessMessage(null);
+      const response = await api.reevaluateAnswer(answerId);
+      setSuccessMessage(response.message || "Reevaluation started for this response.");
+      await loadDetail(false);
+    } catch (reevaluateError) {
+      setError(reevaluateError instanceof Error ? reevaluateError.message : "Failed to start reevaluation.");
+    } finally {
+      setReevaluatingAnswerId(null);
     }
   }
 
@@ -62,8 +88,7 @@ export function AdminResponsePage() {
       setSuccessMessage(null);
       await api.setManualScore(sessionId, manualScore, manualNotes);
       setSuccessMessage("Manual score saved successfully.");
-      const refreshed = await api.adminDetail(sessionId);
-      setDetail(refreshed);
+      await loadDetail(false);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Failed to save manual score.");
     } finally {
@@ -99,6 +124,7 @@ export function AdminResponsePage() {
         <div className="spacer" />
         <h1 className="page-title">Candidate response</h1>
         {error ? <p className="muted">{error}</p> : null}
+        {successMessage ? <p className="success">{successMessage}</p> : null}
         <div className="stats-row">
           <div className="metric-card">
             <strong>{detail.name}</strong>
@@ -129,6 +155,14 @@ export function AdminResponsePage() {
               <span className="pill">Question ID: {answer.question_id}</span>
               <span className="pill">Question code: {answer.question_code}</span>
               <span className="pill">Score: {answer.evaluation?.total_score ?? "--"}</span>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => void handleReevaluateAnswer(answer.answer_id)}
+                disabled={reprocessing || reevaluatingAnswerId === answer.answer_id}
+              >
+                {reevaluatingAnswerId === answer.answer_id ? "Reevaluating..." : "Reevaluate Response"}
+              </button>
             </div>
 
             <div className="spacer" />
@@ -218,7 +252,6 @@ export function AdminResponsePage() {
 
       <div className="panel">
         <h2 className="section-title">Manual Scoring</h2>
-        {successMessage ? <p className="success">{successMessage}</p> : null}
         <form
           onSubmit={(event) => {
             event.preventDefault();

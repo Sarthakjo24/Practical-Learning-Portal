@@ -97,37 +97,34 @@ class AdminService:
         answers = []
         for display_order, answer in enumerate(sorted(session.answers, key=lambda item: item.id), start=1):
             evaluation = answer.ai_evaluation
+            question = answer.question
+            question_id = int(getattr(answer, "question_id", 0) or 0)
+            fallback_code = f"Q-{question_id:03d}" if question_id > 0 else f"Q-MISSING-{answer.id}"
             answers.append(
                 {
                     "answer_id": str(answer.id),
-                    "question_id": str(answer.question.id),
-                    "question_code": answer.question.question_code,
-                    "question_title": answer.question.title,
+                    "question_id": str(question.id if question is not None else question_id),
+                    "question_code": question.question_code if question is not None else fallback_code,
+                    "question_title": (
+                        question.title
+                        if question is not None
+                        else f"Deleted question ({question_id})"
+                    ),
                     "display_order": display_order,
                     "status": answer.status.value,
-                    "question_audio_url": self.audio_service.question_audio_url(answer.question.audio_storage_key),
+                    "question_audio_url": (
+                        self.audio_service.question_audio_url(question.audio_storage_key)
+                        if question is not None
+                        else ""
+                    ),
                     "audio_url": self.audio_service.candidate_audio_url(answer.audio_storage_key),
                     "transcript_text": answer.transcript.transcript_text if answer.transcript else None,
-                    "standard_responses": [item.response_text for item in answer.question.standard_responses],
-                    "evaluation": (
-                        {
-                            "total_score": float(evaluation.total_score or 0),
-                            "courtesy_score": float(evaluation.courtesy_score or 0),
-                            "respect_score": float(evaluation.respect_score or 0),
-                            "empathy_score": float(evaluation.empathy_score or 0),
-                            "sympathy_score": float(evaluation.sympathy_score or 0),
-                            "tone_score": float(evaluation.tone_score or 0),
-                            "communication_clarity_score": float(evaluation.communication_clarity_score or 0),
-                            "engagement_score": float(evaluation.engagement_score or 0),
-                            "problem_handling_approach_score": float(evaluation.problem_handling_approach_score or 0),
-                            "strengths": evaluation.strengths,
-                            "improvement_areas": evaluation.improvement_areas,
-                            "final_summary": evaluation.final_summary or "",
-                            "confidence_score": evaluation.confidence_score,
-                        }
-                        if evaluation
-                        else None
+                    "standard_responses": (
+                        [item.response_text for item in question.standard_responses]
+                        if question is not None
+                        else []
                     ),
+                    "evaluation": self._serialize_evaluation(evaluation),
                 }
             )
 
@@ -197,3 +194,38 @@ class AdminService:
 
         await self.db.delete(session)
         await self.db.commit()
+
+    def _serialize_evaluation(self, evaluation) -> dict | None:
+        if evaluation is None:
+            return None
+
+        failure_markers = (
+            "evaluation failed:",
+            "audio processing failed:",
+            "unable to parse evaluation result.",
+        )
+        summary = str(evaluation.final_summary or "").strip()
+        if (
+            evaluation.total_score is None
+            or not summary
+            or summary.lower().startswith(failure_markers)
+            or len(evaluation.strengths) == 0
+            or len(evaluation.improvement_areas) == 0
+        ):
+            return None
+
+        return {
+            "total_score": float(evaluation.total_score),
+            "courtesy_score": float(evaluation.courtesy_score or 0),
+            "respect_score": float(evaluation.respect_score or 0),
+            "empathy_score": float(evaluation.empathy_score or 0),
+            "sympathy_score": float(evaluation.sympathy_score or 0),
+            "tone_score": float(evaluation.tone_score or 0),
+            "communication_clarity_score": float(evaluation.communication_clarity_score or 0),
+            "engagement_score": float(evaluation.engagement_score or 0),
+            "problem_handling_approach_score": float(evaluation.problem_handling_approach_score or 0),
+            "strengths": evaluation.strengths,
+            "improvement_areas": evaluation.improvement_areas,
+            "final_summary": summary,
+            "confidence_score": evaluation.confidence_score,
+        }

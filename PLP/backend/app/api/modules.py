@@ -18,14 +18,16 @@ async def healthcheck() -> dict:
 
 @router.get("/modules", response_model=list[ModuleSummary])
 async def list_modules(db: DBSession) -> list[ModuleSummary]:
-    modules = await ModuleService(db).list_active_modules()
+    module_service = ModuleService(db)
+    modules = await module_service.list_active_modules()
+    question_counts = await module_service.count_questions_for_modules([module.id for module in modules])
     return [
         ModuleSummary(
             id=str(module.id),
             slug=module.slug,
             title=module.title,
             description=module.description,
-            question_count=min(module.question_count, settings.candidate_question_count),
+            question_count=min(question_counts.get(module.id, 0), settings.candidate_question_count),
         )
         for module in modules
     ]

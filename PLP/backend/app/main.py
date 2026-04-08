@@ -45,20 +45,28 @@ async def _lifespan(app: FastAPI):  # type: ignore[type-arg]
     # --- startup ---
     await init_database()
     await seed_default_data()
-    pending_count = await enqueue_pending_processing_sessions()
-    if pending_count:
-        _logger.info("Requeued %d pending transcription/evaluation sessions on startup.", pending_count)
-    requeue_task = asyncio.create_task(run_processing_requeue_loop())
+    pending_count = 0
+    requeue_task: asyncio.Task | None = None
+    if settings.eval_requeue_enabled:
+        pending_count = await enqueue_pending_processing_sessions()
+        if pending_count:
+            _logger.info("Requeued %d pending transcription/evaluation sessions on startup.", pending_count)
+        requeue_task = asyncio.create_task(
+            run_processing_requeue_loop(settings.eval_requeue_interval_seconds)
+        )
+    else:
+        _logger.info("Evaluation requeue loop disabled by EVAL_REQUEUE_ENABLED=false.")
     app.state.processing_requeue_task = requeue_task
 
     yield
 
     # --- shutdown ---
-    requeue_task.cancel()
-    try:
-        await requeue_task
-    except asyncio.CancelledError:
-        pass
+    if requeue_task is not None:
+        requeue_task.cancel()
+        try:
+            await requeue_task
+        except asyncio.CancelledError:
+            pass
 
 
 def create_app() -> FastAPI:
