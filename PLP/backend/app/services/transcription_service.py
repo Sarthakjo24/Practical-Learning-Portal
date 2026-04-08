@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -19,15 +20,22 @@ class TranscriptionService:
 
     def _transcribe_subprocess(self, audio_path: Path) -> dict:
         # On Windows, force CPU + float32 to avoid CTranslate2 access violations.
-        # Even though we run in a subprocess (which isolates crashes from the
-        # Celery worker), these settings also prevent the subprocess from hanging
-        # waiting for GPU initialisation that doesn't exist.
         if sys.platform == "win32":
             device = "cpu"
             compute_type = "float32"
         else:
             device = settings.faster_whisper_device
             compute_type = settings.faster_whisper_compute_type
+
+        # Pass thread-limiting env vars to the subprocess.
+        # CTranslate2 crashes on Windows when it tries to spawn multiple CPU
+        # threads at DLL initialisation time (STATUS_ACCESS_VIOLATION).
+        # Limiting every BLAS/OpenMP layer to 1 thread prevents the crash.
+        env = os.environ.copy()
+        env["OMP_NUM_THREADS"] = "1"
+        env["OPENBLAS_NUM_THREADS"] = "1"
+        env["MKL_NUM_THREADS"] = "1"
+        env["NUMEXPR_NUM_THREADS"] = "1"
 
         try:
             result = subprocess.run(
@@ -41,7 +49,8 @@ class TranscriptionService:
                 ],
                 capture_output=True,
                 text=True,
-                timeout=300,  # 5-minute hard limit per audio file
+                timeout=300,
+                env=env,
             )
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError(

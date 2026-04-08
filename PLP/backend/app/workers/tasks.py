@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -23,11 +24,38 @@ from app.workers.celery_app import celery_app
     retry_kwargs={"max_retries": 3},
 )
 def process_candidate_session(session_id: str) -> None:
+    # On Windows the default ProactorEventLoop is incompatible with aiomysql —
+    # the _proactor socket handle becomes None mid-write, raising AttributeError.
+    # WindowsSelectorEventLoopPolicy uses SelectorEventLoop which works correctly.
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(_process_candidate_session(int(session_id)))
 
 
 async def _process_candidate_session(session_id: int) -> None:
-    async with AsyncSessionLocal() as db:
+    # Create a FRESH engine for every task invocation.
+    # asyncio.run() creates a new event loop each call; reusing the module-level
+    # engine/pool (whose sockets are tied to the previous loop) causes:
+    #   RuntimeError: Task got Future attached to a different loop
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+    from app.core.config import settings as _settings
+
+    engine = create_async_engine(_settings.database_url, pool_pre_ping=False)
+    SessionLocal = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+    )
+    try:
+        async with SessionLocal() as db:
+            await _run_session_pipeline(db, session_id)
+    finally:
+        await engine.dispose()
+
+
+async def _run_session_pipeline(db: object, session_id: int) -> None:
         result = await db.execute(
             select(CandidateSession)
             .where(CandidateSession.id == session_id)
@@ -51,9 +79,37 @@ async def _process_candidate_session(session_id: int) -> None:
 
         for answer in session.answers:
             if not answer.audio_storage_key:
+                # Provide a zeroed fallback evaluation for missing audio
+                if answer.ai_evaluation is None:
+                    answer.ai_evaluation = AIEvaluation(
+                        answer_id=answer.id,
+                        total_score=0,
+                        courtesy_score=0,
+                        respect_score=0,
+                        empathy_score=0,
+                        tone_score=0,
+                        communication_clarity_score=0,
+                        final_summary="No audio recorded by candidate."
+                    )
                 continue
 
-            transcript_payload = await transcription_service.transcribe(answer.audio_storage_key)
+            try:
+                transcript_payload = await transcription_service.transcribe(answer.audio_storage_key)
+            except Exception as e:
+                # E.g., FileNotFoundError for old missing webm files
+                if answer.ai_evaluation is None:
+                    answer.ai_evaluation = AIEvaluation(
+                        answer_id=answer.id,
+                        total_score=0,
+                        courtesy_score=0,
+                        respect_score=0,
+                        empathy_score=0,
+                        tone_score=0,
+                        communication_clarity_score=0,
+                        final_summary=f"Audio processing failed: {str(e)}"
+                    )
+                continue
+
             if answer.transcript is None:
                 answer.transcript = Transcript(
                     answer_id=answer.id,
