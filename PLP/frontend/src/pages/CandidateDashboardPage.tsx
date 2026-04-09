@@ -8,6 +8,7 @@ export function CandidateDashboardPage() {
   const { user } = useSession();
   const navigate = useNavigate();
   const [modules, setModules] = useState<ModuleSummary[]>([]);
+  const [selectedModuleSlug, setSelectedModuleSlug] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyModule, setBusyModule] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -19,6 +20,12 @@ export function CandidateDashboardPage() {
         setError(null);
         const nextModules = await api.modules();
         setModules(nextModules);
+        setSelectedModuleSlug((current) => {
+          if (current && nextModules.some((module) => module.slug === current)) {
+            return current;
+          }
+          return nextModules[0]?.slug ?? null;
+        });
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Failed to load dashboard.");
       } finally {
@@ -48,6 +55,39 @@ export function CandidateDashboardPage() {
   return (
     <section className="dashboard-grid">
       <div className="panel">
+        <h2 className="section-title">Available modules</h2>
+        <div className="stack">
+          {modules.length === 0 ? (
+            <p className="muted">No active modules available right now.</p>
+          ) : (
+            modules.map((module) => {
+              const isSelected = selectedModuleSlug === module.slug;
+              return (
+                <div className="module-card" key={module.id}>
+                  <h3>{module.title}</h3>
+                  <p className="muted">{module.description ?? "Customer handling assessment module."}</p>
+                  <div className="badge-row">
+                    <span className="pill">{module.question_count} questions</span>
+                    <span className="pill">{module.slug}</span>
+                    {isSelected ? <span className="pill">Selected</span> : null}
+                  </div>
+                  <div className="spacer" />
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => setSelectedModuleSlug(module.slug)}
+                    disabled={isSelected || busyModule !== null}
+                  >
+                    {isSelected ? "Selected module" : "Select module"}
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      <div className="panel">
         <h1 className="page-title">Candidate dashboard</h1>
         <div className="stats-row">
           <div className="metric-card">
@@ -64,32 +104,20 @@ export function CandidateDashboardPage() {
           Welcome, {user?.full_name}. Start your assessment when you are ready. Scores remain
           hidden from the candidate interface after submission.
         </p>
+        <div className="spacer" />
+        <button
+          className="primary-button"
+          type="button"
+          disabled={!selectedModuleSlug || busyModule !== null}
+          onClick={() => {
+            if (selectedModuleSlug) {
+              void startAssessment(selectedModuleSlug);
+            }
+          }}
+        >
+          {busyModule === selectedModuleSlug ? "Preparing..." : "Start Assessment"}
+        </button>
         {error ? <p className="muted">{error}</p> : null}
-      </div>
-
-      <div className="panel">
-        <h2 className="section-title">Available modules</h2>
-        <div className="stack">
-          {modules.map((module) => (
-            <div className="module-card" key={module.id}>
-              <h3>{module.title}</h3>
-              <p className="muted">{module.description ?? "Customer handling assessment module."}</p>
-              <div className="badge-row">
-                <span className="pill">{module.question_count} questions</span>
-                <span className="pill">{module.slug}</span>
-              </div>
-              <div className="spacer" />
-              <button
-                className="primary-button"
-                type="button"
-                disabled={busyModule === module.slug}
-                onClick={() => startAssessment(module.slug)}
-              >
-                {busyModule === module.slug ? "Preparing..." : "Start assessment"}
-              </button>
-            </div>
-          ))}
-        </div>
       </div>
     </section>
   );

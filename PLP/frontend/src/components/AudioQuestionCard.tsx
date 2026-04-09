@@ -11,12 +11,14 @@ export function AudioQuestionCard({ answer, pendingFile, onRecordingReady }: Aud
   const [recording, setRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(answer.audio_url ?? null);
+  const [resubmitAttemptsUsed, setResubmitAttemptsUsed] = useState(0);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const replacementAttemptRef = useRef(false);
   const hasExistingResponse = Boolean(answer.audio_url || pendingFile);
-  const hasPendingRecording = Boolean(pendingFile);
+  const isResubmitExhausted = hasExistingResponse && resubmitAttemptsUsed >= 1;
 
   useEffect(() => {
     if (pendingFile) {
@@ -46,8 +48,15 @@ export function AudioQuestionCard({ answer, pendingFile, onRecordingReady }: Aud
   }, [previewUrl]);
 
   async function startRecording() {
+    if (isResubmitExhausted) {
+      setError("resubmit attempts exhausted");
+      return;
+    }
+
     try {
       setError(null);
+      replacementAttemptRef.current = hasExistingResponse;
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       chunksRef.current = [];
@@ -63,6 +72,9 @@ export function AudioQuestionCard({ answer, pendingFile, onRecordingReady }: Aud
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
         const file = new File([blob], `${answer.question_code}.webm`, { type: "audio/webm" });
         onRecordingReady(answer.question_id, file);
+        if (replacementAttemptRef.current) {
+          setResubmitAttemptsUsed(1);
+        }
         stream.getTracks().forEach((track) => track.stop());
       };
 
@@ -86,9 +98,7 @@ export function AudioQuestionCard({ answer, pendingFile, onRecordingReady }: Aud
           <h3 className="section-title">{answer.question_title}</h3>
           <p className="muted">{answer.question_code}</p>
         </div>
-        <span className={`status ${answer.audio_url ? "success" : "warning"}`}>
-          {answer.audio_url ? "Recorded" : "Awaiting response"}
-        </span>
+        {hasExistingResponse ? <span className="status success">Recorded</span> : <span className="status warning">Awaiting response</span>}
       </div>
 
       <div>
@@ -104,7 +114,7 @@ export function AudioQuestionCard({ answer, pendingFile, onRecordingReady }: Aud
 
       <div className="record-strip">
         {!recording ? (
-          <button className="primary-button" type="button" onClick={startRecording}>
+          <button className="primary-button" type="button" onClick={startRecording} disabled={isResubmitExhausted}>
             {hasExistingResponse ? "Record replacement" : "Start recording"}
           </button>
         ) : (
@@ -112,10 +122,6 @@ export function AudioQuestionCard({ answer, pendingFile, onRecordingReady }: Aud
             Stop recording
           </button>
         )}
-
-        <span className={`status ${recording ? "warning" : hasPendingRecording ? "success" : "success"}`}>
-          {recording ? "Recording live" : hasPendingRecording ? "Ready to submit" : "Recorder idle"}
-        </span>
       </div>
 
       {previewUrl ? (
@@ -132,13 +138,7 @@ export function AudioQuestionCard({ answer, pendingFile, onRecordingReady }: Aud
       ) : null}
 
       <div className="record-strip">
-        <span className={`status ${hasPendingRecording ? "success" : answer.audio_url ? "success" : "warning"}`}>
-          {hasPendingRecording
-            ? "Will upload on final submit"
-            : answer.audio_url
-              ? "Response saved"
-              : "No response recorded yet"}
-        </span>
+        {isResubmitExhausted ? <span className="status warning">resubmit attempts exhausted</span> : null}
         {answer.transcript_text ? <span className="status success">Processed</span> : null}
       </div>
 

@@ -12,8 +12,7 @@ export function LoginPage() {
       <div className="panel">
         <h1 className="page-title">Secure sign-in</h1>
         <p className="muted">
-          Use Google or Microsoft through Auth0. The backend completes the callback and creates your
-          session cookie automatically after authentication.
+          Use Google or Microsoft through Auth0.
         </p>
         <div className="hero-actions">
           <button className="primary-button" disabled={loading} onClick={() => login("google", returnTo)}>

@@ -105,6 +105,7 @@ export function AssessmentPage() {
   const readyToSubmit = session?.answers.every(
     (answer) => Boolean(answer.audio_url || pendingRecordings[answer.question_id])
   );
+  const scenarioCount = session?.answers.length ?? 0;
 
   return (
     <section className="stack">
@@ -112,14 +113,18 @@ export function AssessmentPage() {
         <h1 className="page-title">{session?.module_title}</h1>
         <div className="badge-row">
           <span className="pill">{session?.candidate_id}</span>
-          <span className="pill">{session?.status}</span>
           <span className="pill">{session?.answers.length ?? 0} questions</span>
         </div>
         <div className="spacer" />
-        <p className="muted">
-          Listen carefully, record each spoken response, and submit once at the end. All recorded
-          answers will upload together when you press the final submit button.
-        </p>
+        <div className="module-card">
+          <p className="muted">
+            <strong>INSTRUCTIONS :</strong> There are total of {scenarioCount} scenarios which are faced by customers.
+            Provide answer for each scenario by recording your response. You don't have to be too much technical
+            regarding the problem. You can resubmit a response if something fails in first attempt. Press SUBMIT
+            RESPONSE once all the responses have been recorded. All recorded answers will upload together when you
+            press the final submit button.
+          </p>
+        </div>
         {error ? <p className="muted">{error}</p> : null}
       </div>
 
@@ -142,7 +147,7 @@ export function AssessmentPage() {
           disabled={!readyToSubmit || submitting}
           onClick={handleSubmit}
         >
-          {submitting ? "Submitting..." : "Submit assessment"}
+          {submitting ? "Submitting..." : "Submit response"}
         </button>
         {error ? <p className="muted">{error}</p> : null}
       </div>

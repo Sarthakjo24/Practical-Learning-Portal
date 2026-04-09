@@ -8,9 +8,6 @@ export function AdminResponsePage() {
   const [detail, setDetail] = useState<AdminCandidateDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [manualScore, setManualScore] = useState<number>(0);
-  const [manualNotes, setManualNotes] = useState<string>("");
-  const [savingManualScore, setSavingManualScore] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [reprocessing, setReprocessing] = useState(false);
   const [reevaluatingAnswerId, setReevaluatingAnswerId] = useState<string | null>(null);
@@ -23,8 +20,6 @@ export function AdminResponsePage() {
       setError(null);
       const response = await api.adminDetail(sessionId);
       setDetail(response);
-      setManualScore(response.latest_manual_score?.manual_score ?? 0);
-      setManualNotes(response.latest_manual_score?.notes ?? "");
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load candidate response.");
     } finally {
@@ -39,6 +34,31 @@ export function AdminResponsePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
+  function isEvaluationReady(source: AdminCandidateDetail, answerId?: string): boolean {
+    if (answerId) {
+      const answer = source.answers.find((item) => item.answer_id === answerId);
+      return Boolean(answer?.evaluation);
+    }
+    return source.answers.every((answer) => Boolean(answer.evaluation));
+  }
+
+  async function waitForEvaluationUpdate(answerId?: string): Promise<boolean> {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      try {
+        const latest = await api.adminDetail(sessionId);
+        setDetail(latest);
+        if (isEvaluationReady(latest, answerId)) {
+          return true;
+        }
+      } catch {
+        // Keep retrying within the polling window.
+      }
+    }
+
+    return false;
+  }
+
   async function handleReprocess() {
     if (!detail) {
       return;
@@ -47,10 +67,14 @@ export function AdminResponsePage() {
     try {
       setReprocessing(true);
       setError(null);
-      setSuccessMessage(null);
-      const response = await api.reprocessSession(sessionId);
-      setSuccessMessage(response.message || "Reprocessing started. Refresh in a few minutes to see updates.");
-      await loadDetail(false);
+      setSuccessMessage("Reprocessing requested. We're refreshing results...");
+      await api.reprocessSession(sessionId);
+      const updated = await waitForEvaluationUpdate();
+      setSuccessMessage(
+        updated
+          ? "Reprocessing completed and results were refreshed."
+          : "Reprocessing is still running. Please refresh again shortly."
+      );
     } catch (reprocessError) {
       setError(reprocessError instanceof Error ? reprocessError.message : "Failed to start reprocessing.");
     } finally {
@@ -66,33 +90,18 @@ export function AdminResponsePage() {
     try {
       setReevaluatingAnswerId(answerId);
       setError(null);
-      setSuccessMessage(null);
-      const response = await api.reevaluateAnswer(answerId);
-      setSuccessMessage(response.message || "Reevaluation started for this response.");
-      await loadDetail(false);
+      setSuccessMessage("Reevaluation requested. We're refreshing this response...");
+      await api.reevaluateAnswer(answerId);
+      const updated = await waitForEvaluationUpdate(answerId);
+      setSuccessMessage(
+        updated
+          ? "Reevaluation completed and the response panel was refreshed."
+          : "Reevaluation is still running. Please refresh again shortly."
+      );
     } catch (reevaluateError) {
       setError(reevaluateError instanceof Error ? reevaluateError.message : "Failed to start reevaluation.");
     } finally {
       setReevaluatingAnswerId(null);
-    }
-  }
-
-  async function handleSaveManualScore() {
-    if (!detail) {
-      return;
-    }
-
-    try {
-      setSavingManualScore(true);
-      setError(null);
-      setSuccessMessage(null);
-      await api.setManualScore(sessionId, manualScore, manualNotes);
-      setSuccessMessage("Manual score saved successfully.");
-      await loadDetail(false);
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Failed to save manual score.");
-    } finally {
-      setSavingManualScore(false);
     }
   }
 
@@ -139,10 +148,20 @@ export function AdminResponsePage() {
             Candidate ID
           </div>
           <div className="metric-card">
+            <strong>{detail.session_id}</strong>
+            Session ID
+          </div>
+          <div className="metric-card">
             <strong>{detail.ai_score ?? "--"}</strong>
             Total AI score
           </div>
         </div>
+        {detail.overall_performance_summary ? (
+          <div className="module-card">
+            <strong>Overall performance summary</strong>
+            <p className="muted">{detail.overall_performance_summary}</p>
+          </div>
+        ) : null}
       </div>
 
       {detail.answers
@@ -150,7 +169,9 @@ export function AdminResponsePage() {
         .sort((left, right) => left.display_order - right.display_order)
         .map((answer) => (
           <div className="module-card" key={answer.answer_id}>
-            <h2 className="section-title">Question: {answer.question_title || answer.question_code}</h2>
+            <h2 className="section-title">
+              Question {answer.display_order}: {answer.question_title || answer.question_code}
+            </h2>
             <div className="badge-row">
               <span className="pill">Question ID: {answer.question_id}</span>
               <span className="pill">Question code: {answer.question_code}</span>
@@ -216,11 +237,6 @@ export function AdminResponsePage() {
                   <span className="pill">Engagement: {answer.evaluation.engagement_score}</span>
                   <span className="pill">Handling: {answer.evaluation.problem_handling_approach_score}</span>
                 </div>
-                <div className="spacer" />
-                <div>
-                  <strong>Summary</strong>
-                  <p className="muted">{answer.evaluation.final_summary}</p>
-                </div>
                 {answer.evaluation.strengths.length > 0 ? (
                   <div>
                     <strong>Strengths</strong>
@@ -249,41 +265,6 @@ export function AdminResponsePage() {
             )}
           </div>
         ))}
-
-      <div className="panel">
-        <h2 className="section-title">Manual Scoring</h2>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void handleSaveManualScore();
-          }}
-        >
-          <div className="form-group">
-            <label htmlFor="manual-score">Manual Score (0-100)</label>
-            <input
-              id="manual-score"
-              type="number"
-              min="0"
-              max="100"
-              value={manualScore}
-              onChange={(event) => setManualScore(Number(event.target.value))}
-              required
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="manual-notes">Notes</label>
-            <textarea
-              id="manual-notes"
-              value={manualNotes}
-              onChange={(event) => setManualNotes(event.target.value)}
-              rows={4}
-            />
-          </div>
-          <button type="submit" disabled={savingManualScore}>
-            {savingManualScore ? "Saving..." : "Save Manual Score"}
-          </button>
-        </form>
-      </div>
 
       <div className="panel">
         <h2 className="section-title">Reprocess Session</h2>

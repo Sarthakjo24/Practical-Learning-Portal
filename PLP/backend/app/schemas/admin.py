@@ -49,6 +49,7 @@ class AdminCandidateDetail(BaseModel):
     module_title: str
     status: str
     ai_score: float | None = None
+    overall_performance_summary: str | None = None
     latest_manual_score: ManualScoreResponse | None = None
     login_time: datetime
     submission_time: datetime | None = None

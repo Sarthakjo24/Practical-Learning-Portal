@@ -116,6 +116,7 @@ export interface AdminCandidateDetail {
   module_title: string;
   status: string;
   ai_score?: number | null;
+  overall_performance_summary?: string | null;
   latest_manual_score?: ManualScore | null;
   login_time: string;
   submission_time?: string | null;

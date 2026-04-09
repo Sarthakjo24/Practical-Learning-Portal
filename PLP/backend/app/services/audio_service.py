@@ -49,6 +49,12 @@ class AudioService:
     def question_audio_url(self, storage_key: str) -> str:
         return f"/assets/questions/{self._resolve_question_audio_name(storage_key)}"
 
+    def has_question_audio(self, storage_key: str | None) -> bool:
+        if not storage_key:
+            return False
+        resolved_name = self._resolve_question_audio_name(storage_key)
+        return (settings.question_audio_dir / resolved_name).exists()
+
     def delete_storage_key(self, storage_key: str | None) -> None:
         if not storage_key:
             return

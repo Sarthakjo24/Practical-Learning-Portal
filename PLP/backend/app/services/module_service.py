@@ -1,35 +1,47 @@
 from __future__ import annotations
 
+import random
+
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.questions import EvaluationConfig, Module, Question
 from app.schemas.evaluation import EvaluationConfigUpdate
+from app.services.audio_service import AudioService
 
 
 class ModuleService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+        self.audio_service = AudioService()
 
     async def list_active_modules(self) -> list[Module]:
         result = await self.db.execute(select(Module).where(Module.is_active.is_(True)).order_by(Module.title))
         return list(result.scalars().all())
 
     async def count_questions(self, module_id: int) -> int:
-        result = await self.db.execute(select(func.count(Question.id)).where(Question.module_id == module_id))
-        return int(result.scalar_one() or 0)
+        result = await self.db.execute(
+            select(Question.audio_storage_key)
+            .where(Question.module_id == module_id)
+        )
+        rows = result.all()
+        return sum(1 for row in rows if self.audio_service.has_question_audio(row[0]))
 
     async def count_questions_for_modules(self, module_ids: list[int]) -> dict[int, int]:
         if not module_ids:
             return {}
+
+        counts: dict[int, int] = {int(module_id): 0 for module_id in module_ids}
         result = await self.db.execute(
-            select(Question.module_id, func.count(Question.id))
+            select(Question.module_id, Question.audio_storage_key)
             .where(Question.module_id.in_(module_ids))
-            .group_by(Question.module_id)
         )
-        return {int(row[0]): int(row[1]) for row in result.all()}
+        for module_id, audio_storage_key in result.all():
+            if self.audio_service.has_question_audio(audio_storage_key):
+                counts[int(module_id)] = counts.get(int(module_id), 0) + 1
+        return counts
 
     async def get_module_by_slug(self, module_slug: str) -> Module:
         modules = await self.list_active_modules()
@@ -43,16 +55,25 @@ class ModuleService:
             select(Question)
             .where(Question.module_id == module_id)
             .options(selectinload(Question.standard_responses))
-            .order_by(func.rand())
-            .limit(limit)
         )
         questions = list(result.scalars().all())
-        if len(questions) < limit:
+        questions_with_audio = [
+            question
+            for question in questions
+            if self.audio_service.has_question_audio(question.audio_storage_key)
+        ]
+
+        if len(questions_with_audio) < limit:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Module does not have {limit} questions.",
+                detail=(
+                    f"Module has only {len(questions_with_audio)} usable question recordings, "
+                    f"but {limit} are required."
+                ),
             )
-        return questions
+        if len(questions_with_audio) == limit:
+            return questions_with_audio
+        return random.sample(questions_with_audio, k=limit)
 
     async def get_active_evaluation_config(self, module_id: int) -> EvaluationConfig:
         result = await self.db.execute(

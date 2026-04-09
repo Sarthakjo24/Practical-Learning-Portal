@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentAdminUser, DBSession
 from app.models.answer import CandidateAnswer
@@ -69,19 +70,27 @@ async def reprocess_session(session_id: str, db: DBSession, _: CurrentAdminUser)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid session id.") from exc
 
     session_row = await db.execute(
-        select(CandidateSession.id, CandidateSession.submitted_at).where(CandidateSession.id == parsed_session_id)
+        select(CandidateSession)
+        .where(CandidateSession.id == parsed_session_id)
+        .options(selectinload(CandidateSession.answers).selectinload(CandidateAnswer.ai_evaluation))
     )
-    session_data = session_row.one_or_none()
-    if session_data is None:
+    session = session_row.scalar_one_or_none()
+    if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate session not found.")
-    if session_data[1] is None:
+    if session.submitted_at is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Session has not been submitted yet.",
         )
 
-    mode = await dispatch_session_processing(parsed_session_id)
-    return AuthMessageResponse(message=f"Reprocessing started for session via {mode}.")
+    for answer in session.answers:
+        if answer.ai_evaluation is not None:
+            await db.delete(answer.ai_evaluation)
+            answer.ai_evaluation = None
+
+    await db.commit()
+    await dispatch_session_processing(parsed_session_id)
+    return AuthMessageResponse(message="Session reprocessing requested. Updated results will appear shortly.")
 
 
 @router.post("/answers/{answer_id}/reevaluate", response_model=AuthMessageResponse)
@@ -92,21 +101,29 @@ async def reevaluate_answer(answer_id: str, db: DBSession, _: CurrentAdminUser) 
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid answer id.") from exc
 
     result = await db.execute(
-        select(CandidateAnswer.session_id, CandidateSession.submitted_at)
-        .join(CandidateSession, CandidateSession.id == CandidateAnswer.session_id)
+        select(CandidateAnswer)
         .where(CandidateAnswer.id == parsed_answer_id)
+        .options(
+            selectinload(CandidateAnswer.session),
+            selectinload(CandidateAnswer.ai_evaluation),
+        )
     )
-    row = result.one_or_none()
-    if row is None:
+    answer = result.scalar_one_or_none()
+    if answer is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate answer not found.")
-    if row[1] is None:
+    if answer.session is None or answer.session.submitted_at is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Session has not been submitted yet.",
         )
 
-    mode = await dispatch_session_processing(int(row[0]))
-    return AuthMessageResponse(message=f"Reevaluation started for response via {mode}.")
+    if answer.ai_evaluation is not None:
+        await db.delete(answer.ai_evaluation)
+        answer.ai_evaluation = None
+
+    await db.commit()
+    await dispatch_session_processing(int(answer.session_id))
+    return AuthMessageResponse(message="Response reevaluation requested. Updated results will appear shortly.")
 
 
 @router.delete("/candidates/{session_id}", response_model=AuthMessageResponse)

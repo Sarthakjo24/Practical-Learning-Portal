@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import logging
+from statistics import mean
+from typing import Any
+
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +15,10 @@ from app.models.questions import Question
 from app.models.sessions import CandidateSession
 from app.schemas.admin import AdminCandidateDetail, AdminCandidateListItem, AdminCandidateListResponse
 from app.services.audio_service import AudioService
+from app.services.evaluation_service import EvaluationService
+
+
+logger = logging.getLogger(__name__)
 
 
 class AdminService:
@@ -100,6 +108,7 @@ class AdminService:
             question = answer.question
             question_id = int(getattr(answer, "question_id", 0) or 0)
             fallback_code = f"Q-{question_id:03d}" if question_id > 0 else f"Q-MISSING-{answer.id}"
+            serialized_evaluation = self._serialize_evaluation(evaluation)
             answers.append(
                 {
                     "answer_id": str(answer.id),
@@ -124,9 +133,14 @@ class AdminService:
                         if question is not None
                         else []
                     ),
-                    "evaluation": self._serialize_evaluation(evaluation),
+                    "evaluation": serialized_evaluation,
                 }
             )
+
+        overall_performance_summary = await self._build_overall_performance_summary(
+            session=session,
+            serialized_answers=answers,
+        )
 
         latest_manual = session.manual_scores[0] if session.manual_scores else None
         if latest_manual is not None:
@@ -141,6 +155,7 @@ class AdminService:
             module_title=session.module.title,
             status=session.status.value,
             ai_score=session.ai_score,
+            overall_performance_summary=overall_performance_summary,
             latest_manual_score=(
                 {
                     "id": str(latest_manual.id),
@@ -229,3 +244,113 @@ class AdminService:
             "final_summary": summary,
             "confidence_score": evaluation.confidence_score,
         }
+
+    async def _build_overall_performance_summary(
+        self,
+        session: CandidateSession,
+        serialized_answers: list[dict[str, Any]],
+    ) -> str | None:
+        evaluated_answers: list[dict[str, Any]] = []
+        for answer in serialized_answers:
+            evaluation = answer.get("evaluation")
+            if not isinstance(evaluation, dict):
+                continue
+
+            transcript = str(answer.get("transcript_text") or "").strip()
+            transcript_excerpt = transcript[:600] + ("..." if len(transcript) > 600 else "")
+
+            evaluated_answers.append(
+                {
+                    "question_code": answer.get("question_code"),
+                    "question_title": answer.get("question_title"),
+                    "transcript_excerpt": transcript_excerpt,
+                    "total_score": evaluation.get("total_score"),
+                    "courtesy_score": evaluation.get("courtesy_score"),
+                    "respect_score": evaluation.get("respect_score"),
+                    "empathy_score": evaluation.get("empathy_score"),
+                    "tone_score": evaluation.get("tone_score"),
+                    "communication_clarity_score": evaluation.get("communication_clarity_score"),
+                    "engagement_score": evaluation.get("engagement_score"),
+                    "problem_handling_approach_score": evaluation.get("problem_handling_approach_score"),
+                    "strengths": evaluation.get("strengths", []),
+                    "improvement_areas": evaluation.get("improvement_areas", []),
+                }
+            )
+
+        if not evaluated_answers:
+            return None
+
+        candidate_name = session.user.full_name or session.user.email or "Candidate"
+        candidate_id = str(session.user.candidate_code or "")
+
+        summary_service = EvaluationService()
+        if summary_service.client is not None:
+            try:
+                summary = await summary_service.summarize_candidate_performance(
+                    module_title=session.module.title,
+                    candidate_name=candidate_name,
+                    candidate_id=candidate_id,
+                    evaluated_answers=evaluated_answers,
+                )
+                if summary.strip():
+                    return summary.strip()
+            except Exception as exc:
+                logger.warning(
+                    "Falling back to heuristic overall summary for session %s: %s",
+                    session.id,
+                    exc,
+                )
+
+        return self._heuristic_overall_summary(evaluated_answers)
+
+    def _heuristic_overall_summary(self, evaluated_answers: list[dict[str, Any]]) -> str | None:
+        if not evaluated_answers:
+            return None
+
+        scores = []
+        for answer in evaluated_answers:
+            raw_score = answer.get("total_score")
+            try:
+                score = float(raw_score)
+            except (TypeError, ValueError):
+                continue
+            scores.append(score)
+
+        average_score = round(mean(scores), 2) if scores else None
+        strengths = self._collect_unique_points(evaluated_answers, "strengths")
+        improvement_areas = self._collect_unique_points(evaluated_answers, "improvement_areas")
+
+        response_count = len(evaluated_answers)
+        score_text = f" with an average score of {average_score:.2f}/10" if average_score is not None else ""
+        strengths_text = ", ".join(strengths) if strengths else "polite tone and response structure"
+        improvements_text = (
+            ", ".join(improvement_areas)
+            if improvement_areas
+            else "showing more empathy and clearer problem-handling intent"
+        )
+        return (
+            f"Across {response_count} evaluated responses{score_text}, the candidate showed recurring strengths in "
+            f"{strengths_text}. The main opportunities to improve were {improvements_text}."
+        )
+
+    def _collect_unique_points(
+        self,
+        evaluated_answers: list[dict[str, Any]],
+        field_name: str,
+        limit: int = 3,
+    ) -> list[str]:
+        results: list[str] = []
+        seen: set[str] = set()
+        for answer in evaluated_answers:
+            for raw_item in answer.get(field_name, []) or []:
+                item = str(raw_item or "").strip()
+                if not item:
+                    continue
+                normalized = item.lower()
+                if normalized in seen:
+                    continue
+                seen.add(normalized)
+                results.append(item)
+                if len(results) >= limit:
+                    return results
+        return results

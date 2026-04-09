@@ -24,6 +24,12 @@ Rules:
 - Compare against the behavioral intent, tone, empathy, respect, engagement, and handling approach shown in the standard responses.
 - Do not compare exact wording.
 - Penalize dismissive, robotic, rude, overly technical, or low-empathy responses.
+- If standard responses are missing, evaluate based on scenario transcript and candidate behavior only.
+- Every point must be grounded in the candidate transcript and behavior cues.
+- `strengths` must contain 1-3 concise, specific positives.
+- `improvement_areas` must contain at least 1 genuine weakness (1-3 total), not placeholders.
+- For high-performing responses, still include one truthful, nuanced improvement opportunity.
+- Avoid generic wording like "can improve more"; be concrete about what was missing.
 
 Return strict JSON:
 {
