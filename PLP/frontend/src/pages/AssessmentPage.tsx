@@ -8,12 +8,13 @@ import type { CandidateSessionDetail } from "../types";
 export function AssessmentPage() {
   const { sessionId = "" } = useParams();
   const navigate = useNavigate();
-  const { logout } = useSession();
+  const { user, logout } = useSession();
   const [session, setSession] = useState<CandidateSessionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingRecordings, setPendingRecordings] = useState<Record<string, File>>({});
+  const [showProfile, setShowProfile] = useState(false);
 
   async function loadSession() {
     try {
@@ -108,49 +109,91 @@ export function AssessmentPage() {
   const scenarioCount = session?.answers.length ?? 0;
 
   return (
-    <section className="assessment-stack">
-      <div className="panel">
-        <h1 className="page-title">{session?.module_title}</h1>
-        <div className="badge-row">
-          <span className="pill">{session?.candidate_id}</span>
-          <span className="pill">{session?.answers.length ?? 0} questions</span>
+    <section className="candidate-portal-shell">
+      <aside className="panel candidate-sidebar">
+        <div>
+          <button
+            className="candidate-sidebar-item"
+            type="button"
+            onClick={() => navigate("/dashboard")}
+          >
+            Dashboard
+          </button>
+
+          <div className="spacer" />
+
+          <button className="candidate-sidebar-item active" type="button">
+            {session?.module_title ?? "Assessment"}
+          </button>
         </div>
-        <div className="spacer" />
-        <div className="module-card">
-          <p className="muted">
-            <strong>INSTRUCTIONS :</strong> There are total of {scenarioCount} scenarios which are faced by customers. Listen to the audio of the scenario carefully .
-            Provide answer for each scenario by recording your response. You don't have to be too much technical
-            regarding the problem. You can resubmit a response if something fails in first attempt. Press SUBMIT
-            RESPONSE once all the responses have been recorded. All recorded answers will upload together when you
-            press the final submit button.
-          </p>
+
+        <div className="candidate-sidebar-footer">
+          <button
+            className={`candidate-sidebar-item ${showProfile ? "active" : ""}`}
+            type="button"
+            onClick={() => setShowProfile((current) => !current)}
+          >
+            My Profile
+          </button>
+          <button className="candidate-sidebar-item" type="button" onClick={() => void logout()}>
+            Log out
+          </button>
         </div>
-        {error ? <p className="muted">{error}</p> : null}
+      </aside>
+
+      <div className="candidate-main">
+        {showProfile ? (
+          <div className="panel">
+            <h2 className="section-title">My Profile</h2>
+            <p className="muted">Name: {user?.full_name ?? "--"}</p>
+            <p className="muted">Candidate ID: {user?.candidate_code ?? "--"}</p>
+            <p className="muted">Email: {user?.email ?? "--"}</p>
+          </div>
+        ) : null}
+
+        <div className="panel">
+          <h1 className="page-title">{session?.module_title}</h1>
+          <div className="badge-row">
+            <span className="pill">{session?.candidate_id}</span>
+            <span className="pill">{session?.answers.length ?? 0} questions</span>
+          </div>
+          <div className="spacer" />
+          <div className="module-card">
+            <p className="muted">
+              <strong>INSTRUCTIONS :</strong> There are total of {scenarioCount} scenarios which are faced by customers. Listen to the audio of the scenario carefully .
+              Provide answer for each scenario by recording your response. You don't have to be too much technical
+              regarding the problem. You can resubmit a response if something fails in first attempt. Press SUBMIT
+              RESPONSE once all the responses have been recorded. All recorded answers will upload together when you
+              press the final submit button.
+            </p>
+          </div>
+          {error ? <p className="muted">{error}</p> : null}
+        </div>
+
+        {session?.answers
+          .slice()
+          .sort((left, right) => left.display_order - right.display_order)
+          .map((answer) => (
+            <AudioQuestionCard
+              key={answer.answer_id}
+              answer={answer}
+              pendingFile={pendingRecordings[answer.question_id] ?? null}
+              onRecordingReady={handleRecordingReady}
+            />
+          ))}
+
+        {error ? <div className="panel"><p className="muted">{error}</p></div> : null}
+
+        <button
+          className="primary-button"
+          type="button"
+          disabled={!readyToSubmit || submitting}
+          onClick={handleSubmit}
+          style={{ width: "100%", padding: "1.2rem", fontSize: "1rem" }}
+        >
+          {submitting ? "Submitting..." : "Submit response"}
+        </button>
       </div>
-
-      {session?.answers
-        .slice()
-        .sort((left, right) => left.display_order - right.display_order)
-        .map((answer) => (
-          <AudioQuestionCard
-            key={answer.answer_id}
-            answer={answer}
-            pendingFile={pendingRecordings[answer.question_id] ?? null}
-            onRecordingReady={handleRecordingReady}
-          />
-        ))}
-
-      {error ? <div className="panel"><p className="muted">{error}</p></div> : null}
-
-      <button
-        className="primary-button"
-        type="button"
-        disabled={!readyToSubmit || submitting}
-        onClick={handleSubmit}
-        style={{ width: "100%", padding: "1.2rem", fontSize: "1rem" }}
-      >
-        {submitting ? "Submitting..." : "Submit response"}
-      </button>
     </section>
   );
 }

@@ -24,7 +24,15 @@ Rules:
 - Do not compare exact wording; focus on intent and spirit of the response.
 - Give credit for genuine effort to connect with the customer, even if the phrasing is imperfect or informal.
 - Recognize natural, conversational language positively — candidates do not need formal or scripted phrasing.
+- The candidate transcript comes from speech recognition and may contain filler words, repetitions, incomplete sentences, minor grammar issues, or informal phrasing. Do not penalize for speech-to-text artifacts unless they make the response impossible to understand.
+- Do not penalize the candidate for being shorter than the reference response if the behavioral intent is still meaningfully present.
 - If the candidate shows empathy, willingness to help, or ownership of the issue in any form, acknowledge it as a strength.
+- Use these scoring anchors consistently:
+  - 8-9 = good match in spirit; the response shows clear empathy/respect/helpfulness and handles the customer appropriately even if not perfectly
+  - 7-6 = partial match; the response shows some positive behavioral traits but misses important elements or consistency
+  - 5-3 = minimal effort; the response is weak, vague, transactional, or shows limited empathy/engagement
+  - 1-2 = dismissive, rude, or seriously mishandles the customer concern
+  - 0 = no meaningful response or entirely inappropriate response
 - Score fairly and proportionally. A response that covers most behavioral aspects well should score above 6/10, even if there is room for improvement.
 - Reserve very low scores (below 4/10) only for responses that are clearly dismissive, rude, or entirely miss the customer concern.
 - If standard responses are missing, evaluate based on scenario transcript and candidate behavior only.
@@ -32,6 +40,11 @@ Rules:
 - `strengths` must contain 1-3 concise, specific positives drawn from what the candidate actually said.
 - `improvement_areas` must contain 1-3 genuine, constructive suggestions. Avoid vague or generic feedback like "can improve more."
 - All scores should be on a 0-10 scale (decimals allowed).
+- Use the provided scoring weights when calculating the final `total_score`.
+- First assign the sub-scores, then calculate `total_score` using this weighted formula:
+  `total_score = ((courtesy × 1.5) + (empathy × 1.5) + (respect × 1.2) + (tone × 1.0) + (communication_clarity × 1.3)) / 6.5`
+- Round `total_score` to 1 decimal place.
+- `total_score` must be derived from the weighted formula above and must remain consistent with the sub-scores you provide.
 
 Return strict JSON:
 {

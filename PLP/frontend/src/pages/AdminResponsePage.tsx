@@ -34,21 +34,40 @@ export function AdminResponsePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
-  function isEvaluationReady(source: AdminCandidateDetail, answerId?: string): boolean {
+  function getEvaluationTimestamp(source: AdminCandidateDetail, answerId?: string): string | null {
     if (answerId) {
       const answer = source.answers.find((item) => item.answer_id === answerId);
-      return Boolean(answer?.evaluation);
+      const evaluation = answer?.evaluation;
+      if (!evaluation) {
+        return null;
+      }
+      return JSON.stringify({
+        total_score: evaluation.total_score,
+        final_summary: evaluation.final_summary,
+        strengths: evaluation.strengths,
+        improvement_areas: evaluation.improvement_areas,
+      });
     }
-    return source.answers.every((answer) => Boolean(answer.evaluation));
+
+    return JSON.stringify(
+      source.answers.map((answer) => ({
+        answer_id: answer.answer_id,
+        total_score: answer.evaluation?.total_score ?? null,
+        final_summary: answer.evaluation?.final_summary ?? null,
+        strengths: answer.evaluation?.strengths ?? [],
+        improvement_areas: answer.evaluation?.improvement_areas ?? [],
+      }))
+    );
   }
 
-  async function waitForEvaluationUpdate(answerId?: string): Promise<boolean> {
+  async function waitForEvaluationUpdate(previousMarker: string | null, answerId?: string): Promise<boolean> {
     for (let attempt = 0; attempt < 10; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 3000));
       try {
         const latest = await api.adminDetail(sessionId);
         setDetail(latest);
-        if (isEvaluationReady(latest, answerId)) {
+        const nextMarker = getEvaluationTimestamp(latest, answerId);
+        if (nextMarker && nextMarker !== previousMarker) {
           return true;
         }
       } catch {
@@ -67,9 +86,10 @@ export function AdminResponsePage() {
     try {
       setReprocessing(true);
       setError(null);
+      const previousMarker = getEvaluationTimestamp(detail);
       setSuccessMessage("Reprocessing requested. We're refreshing results...");
       await api.reprocessSession(sessionId);
-      const updated = await waitForEvaluationUpdate();
+      const updated = await waitForEvaluationUpdate(previousMarker);
       setSuccessMessage(
         updated
           ? "Reprocessing completed and results were refreshed."
@@ -90,9 +110,10 @@ export function AdminResponsePage() {
     try {
       setReevaluatingAnswerId(answerId);
       setError(null);
+      const previousMarker = getEvaluationTimestamp(detail, answerId);
       setSuccessMessage("Reevaluation requested. We're refreshing this response...");
       await api.reevaluateAnswer(answerId);
-      const updated = await waitForEvaluationUpdate(answerId);
+      const updated = await waitForEvaluationUpdate(previousMarker, answerId);
       setSuccessMessage(
         updated
           ? "Reevaluation completed and the response panel was refreshed."
@@ -226,17 +247,7 @@ export function AdminResponsePage() {
             {answer.evaluation ? (
               <div className="module-card">
                 <h3 className="section-title">AI evaluation</h3>
-                <div className="badge-row">
-                  <span className="pill">Courtesy: {answer.evaluation.courtesy_score}</span>
-                  <span className="pill">Respect: {answer.evaluation.respect_score}</span>
-                  <span className="pill">Empathy: {answer.evaluation.empathy_score}</span>
-                  <span className="pill">Tone: {answer.evaluation.tone_score}</span>
-                </div>
-                <div className="badge-row">
-                  <span className="pill">Communication: {answer.evaluation.communication_clarity_score}</span>
-                  <span className="pill">Engagement: {answer.evaluation.engagement_score}</span>
-                  <span className="pill">Handling: {answer.evaluation.problem_handling_approach_score}</span>
-                </div>
+                <p className="muted">{answer.evaluation.final_summary || "Evaluation complete."}</p>
                 {answer.evaluation.strengths.length > 0 ? (
                   <div>
                     <strong>Strengths</strong>
