@@ -49,6 +49,7 @@ export interface AnswerEvaluation {
   improvement_areas: string[];
   final_summary: string;
   confidence_score?: number | null;
+  created_at?: string | null;
 }
 
 export interface CandidateAnswerDetail {

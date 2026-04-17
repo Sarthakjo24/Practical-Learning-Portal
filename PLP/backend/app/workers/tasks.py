@@ -100,36 +100,49 @@ def _needs_evaluation_refresh(answer: CandidateAnswer) -> bool:
     return False
 
 
-def _upsert_failed_evaluation(answer: CandidateAnswer, summary: str) -> None:
-    if answer.ai_evaluation is None:
-        answer.ai_evaluation = AIEvaluation(answer_id=answer.id)
+async def _get_or_create_evaluation(db: AsyncSession, answer: CandidateAnswer) -> AIEvaluation:
+    evaluation = answer.ai_evaluation
+    if evaluation is not None:
+        return evaluation
+
+    existing_result = await db.execute(select(AIEvaluation).where(AIEvaluation.answer_id == answer.id))
+    evaluation = existing_result.scalar_one_or_none()
+    if evaluation is None:
+        evaluation = AIEvaluation(answer_id=answer.id)
+        db.add(evaluation)
+
+    answer.ai_evaluation = evaluation
+    return evaluation
+
+
+async def _upsert_failed_evaluation(db: AsyncSession, answer: CandidateAnswer, summary: str) -> None:
+    evaluation = await _get_or_create_evaluation(db, answer)
 
     # Keep score fields NULL for retryable failures so requeue logic can pick
     # the session back up and produce a real AI evaluation later.
-    answer.ai_evaluation.total_score = None
-    answer.ai_evaluation.courtesy_score = None
-    answer.ai_evaluation.respect_score = None
-    answer.ai_evaluation.empathy_score = None
-    answer.ai_evaluation.tone_score = None
-    answer.ai_evaluation.communication_clarity_score = None
-    answer.ai_evaluation.final_summary = summary
-    answer.ai_evaluation.strengths = []
-    answer.ai_evaluation.improvement_areas = []
+    evaluation.total_score = None
+    evaluation.courtesy_score = None
+    evaluation.respect_score = None
+    evaluation.empathy_score = None
+    evaluation.tone_score = None
+    evaluation.communication_clarity_score = None
+    evaluation.final_summary = summary
+    evaluation.strengths = []
+    evaluation.improvement_areas = []
 
 
-def _upsert_zero_evaluation(answer: CandidateAnswer, summary: str) -> None:
-    if answer.ai_evaluation is None:
-        answer.ai_evaluation = AIEvaluation(answer_id=answer.id)
+async def _upsert_zero_evaluation(db: AsyncSession, answer: CandidateAnswer, summary: str) -> None:
+    evaluation = await _get_or_create_evaluation(db, answer)
 
-    answer.ai_evaluation.total_score = 0
-    answer.ai_evaluation.courtesy_score = 0
-    answer.ai_evaluation.respect_score = 0
-    answer.ai_evaluation.empathy_score = 0
-    answer.ai_evaluation.tone_score = 0
-    answer.ai_evaluation.communication_clarity_score = 0
-    answer.ai_evaluation.final_summary = summary
-    answer.ai_evaluation.strengths = []
-    answer.ai_evaluation.improvement_areas = []
+    evaluation.total_score = 0
+    evaluation.courtesy_score = 0
+    evaluation.respect_score = 0
+    evaluation.empathy_score = 0
+    evaluation.tone_score = 0
+    evaluation.communication_clarity_score = 0
+    evaluation.final_summary = summary
+    evaluation.strengths = []
+    evaluation.improvement_areas = []
 
 
 async def _run_session_pipeline(db: AsyncSession, session_id: int) -> None:
@@ -156,7 +169,7 @@ async def _run_session_pipeline(db: AsyncSession, session_id: int) -> None:
 
     for answer in session.answers:
         if not answer.audio_storage_key:
-            _upsert_zero_evaluation(answer, "No audio recorded by candidate.")
+            await _upsert_zero_evaluation(db, answer, "No audio recorded by candidate.")
             continue
         if answer.question is None:
             logger.warning(
@@ -165,7 +178,8 @@ async def _run_session_pipeline(db: AsyncSession, session_id: int) -> None:
                 answer.question_id,
                 session.id,
             )
-            _upsert_failed_evaluation(
+            await _upsert_failed_evaluation(
+                db,
                 answer,
                 f"Evaluation failed: Question metadata missing for question_id={answer.question_id}.",
             )
@@ -188,7 +202,7 @@ async def _run_session_pipeline(db: AsyncSession, session_id: int) -> None:
                     answer.id,
                     session.id,
                 )
-                _upsert_failed_evaluation(answer, f"Audio processing failed: {exc}")
+                await _upsert_failed_evaluation(db, answer, f"Audio processing failed: {exc}")
                 continue
 
             transcript_text = str(transcript_payload.get("transcript_text") or "").strip()
@@ -198,7 +212,8 @@ async def _run_session_pipeline(db: AsyncSession, session_id: int) -> None:
                 answer.transcript.transcript_text = transcript_text
 
         if not transcript_text:
-            _upsert_failed_evaluation(
+            await _upsert_failed_evaluation(
+                db,
                 answer,
                 "Evaluation failed: Missing English/Hinglish transcript text.",
             )
@@ -220,7 +235,7 @@ async def _run_session_pipeline(db: AsyncSession, session_id: int) -> None:
                 answer.id,
                 session.id,
             )
-            _upsert_failed_evaluation(answer, f"Evaluation failed: {exc}")
+            await _upsert_failed_evaluation(db, answer, f"Evaluation failed: {exc}")
             continue
 
         sentiment = evaluation_payload.get("sentiment_breakdown", {}) or {}
@@ -237,27 +252,27 @@ async def _run_session_pipeline(db: AsyncSession, session_id: int) -> None:
         final_summary = str(evaluation_payload.get("final_summary", "") or "").strip()
 
         if total_score is None:
-            _upsert_failed_evaluation(
+            await _upsert_failed_evaluation(
+                db,
                 answer,
                 "Evaluation failed: Missing total_score in model output.",
             )
             continue
 
-        if answer.ai_evaluation is None:
-            answer.ai_evaluation = AIEvaluation(answer_id=answer.id)
+        evaluation = await _get_or_create_evaluation(db, answer)
 
-        answer.ai_evaluation.total_score = total_score
-        answer.ai_evaluation.courtesy_score = courtesy if courtesy is not None else _safe_float(sentiment.get("courtesy"))
-        answer.ai_evaluation.respect_score = respect if respect is not None else _safe_float(sentiment.get("respect"))
-        answer.ai_evaluation.empathy_score = empathy if empathy is not None else _safe_float(sentiment.get("empathy"))
-        answer.ai_evaluation.tone_score = tone if tone is not None else _safe_float(sentiment.get("tone"))
-        answer.ai_evaluation.communication_clarity_score = (
+        evaluation.total_score = total_score
+        evaluation.courtesy_score = courtesy if courtesy is not None else _safe_float(sentiment.get("courtesy"))
+        evaluation.respect_score = respect if respect is not None else _safe_float(sentiment.get("respect"))
+        evaluation.empathy_score = empathy if empathy is not None else _safe_float(sentiment.get("empathy"))
+        evaluation.tone_score = tone if tone is not None else _safe_float(sentiment.get("tone"))
+        evaluation.communication_clarity_score = (
             communication_clarity
             if communication_clarity is not None
             else _safe_float(handling.get("communication_clarity"))
         )
-        answer.ai_evaluation.final_summary = final_summary
-        answer.ai_evaluation.strengths = strengths
-        answer.ai_evaluation.improvement_areas = improvement_areas
+        evaluation.final_summary = final_summary
+        evaluation.strengths = strengths
+        evaluation.improvement_areas = improvement_areas
 
     await db.commit()

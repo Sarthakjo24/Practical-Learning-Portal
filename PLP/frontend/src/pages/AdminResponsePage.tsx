@@ -46,18 +46,22 @@ export function AdminResponsePage() {
         final_summary: evaluation.final_summary,
         strengths: evaluation.strengths,
         improvement_areas: evaluation.improvement_areas,
+        created_at: evaluation.created_at ?? null,
       });
     }
 
-    return JSON.stringify(
-      source.answers.map((answer) => ({
+    return JSON.stringify({
+      completed_at: source.completed_at ?? null,
+      ai_score: source.ai_score ?? null,
+      answers: source.answers.map((answer) => ({
         answer_id: answer.answer_id,
         total_score: answer.evaluation?.total_score ?? null,
         final_summary: answer.evaluation?.final_summary ?? null,
         strengths: answer.evaluation?.strengths ?? [],
         improvement_areas: answer.evaluation?.improvement_areas ?? [],
-      }))
-    );
+        created_at: answer.evaluation?.created_at ?? null,
+      })),
+    });
   }
 
   async function waitForEvaluationUpdate(previousMarker: string | null, answerId?: string): Promise<boolean> {
@@ -87,8 +91,8 @@ export function AdminResponsePage() {
       setReprocessing(true);
       setError(null);
       const previousMarker = getEvaluationTimestamp(detail);
-      setSuccessMessage("Reprocessing requested. We're refreshing results...");
-      await api.reprocessSession(sessionId);
+      const response = await api.reprocessSession(sessionId);
+      setSuccessMessage(response.message || "Reprocessing requested. We're refreshing results...");
       const updated = await waitForEvaluationUpdate(previousMarker);
       setSuccessMessage(
         updated
@@ -111,8 +115,8 @@ export function AdminResponsePage() {
       setReevaluatingAnswerId(answerId);
       setError(null);
       const previousMarker = getEvaluationTimestamp(detail, answerId);
-      setSuccessMessage("Reevaluation requested. We're refreshing this response...");
-      await api.reevaluateAnswer(answerId);
+      const response = await api.reevaluateAnswer(answerId);
+      setSuccessMessage(response.message || "Reevaluation requested. We're refreshing this response...");
       const updated = await waitForEvaluationUpdate(previousMarker, answerId);
       setSuccessMessage(
         updated

@@ -268,6 +268,7 @@ class AdminService:
             "improvement_areas": evaluation.improvement_areas,
             "final_summary": summary,
             "confidence_score": evaluation.confidence_score,
+            "created_at": evaluation.created_at.isoformat() if evaluation.created_at else None,
         }
 
     async def _build_overall_performance_summary(

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
@@ -16,7 +16,8 @@ from app.schemas.admin import (
 )
 from app.schemas.auth import AuthMessageResponse
 from app.services.admin_service import AdminService
-from app.services.processing_service import dispatch_session_processing
+from app.services.processing_service import celery_workers_available, dispatch_session_processing
+from app.workers.tasks import _process_candidate_session
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -64,7 +65,12 @@ async def set_manual_score(
 
 
 @router.post("/candidates/{session_id}/reprocess", response_model=AuthMessageResponse)
-async def reprocess_session(session_id: str, db: DBSession, _: CurrentAdminUser) -> AuthMessageResponse:
+async def reprocess_session(
+    session_id: str,
+    background_tasks: BackgroundTasks,
+    db: DBSession,
+    _: CurrentAdminUser,
+) -> AuthMessageResponse:
     try:
         parsed_session_id = int(session_id)
     except ValueError as exc:
@@ -89,12 +95,25 @@ async def reprocess_session(session_id: str, db: DBSession, _: CurrentAdminUser)
         answer.ai_evaluation = None
 
     await db.commit()
-    await dispatch_session_processing(parsed_session_id)
-    return AuthMessageResponse(message="Session reprocessing requested. Updated results will appear shortly.")
+
+    workers_available = celery_workers_available()
+    if workers_available:
+        await dispatch_session_processing(parsed_session_id, workers_available=True)
+        message = "Session reprocessing requested. Updated results will appear shortly."
+    else:
+        background_tasks.add_task(_process_candidate_session, parsed_session_id)
+        message = "Session reprocessing started locally because no Celery worker was available."
+
+    return AuthMessageResponse(message=message)
 
 
 @router.post("/answers/{answer_id}/reevaluate", response_model=AuthMessageResponse)
-async def reevaluate_answer(answer_id: str, db: DBSession, _: CurrentAdminUser) -> AuthMessageResponse:
+async def reevaluate_answer(
+    answer_id: str,
+    background_tasks: BackgroundTasks,
+    db: DBSession,
+    _: CurrentAdminUser,
+) -> AuthMessageResponse:
     try:
         parsed_answer_id = int(answer_id)
     except ValueError as exc:
@@ -121,8 +140,16 @@ async def reevaluate_answer(answer_id: str, db: DBSession, _: CurrentAdminUser) 
     answer.ai_evaluation = None
 
     await db.commit()
-    await dispatch_session_processing(int(answer.session_id))
-    return AuthMessageResponse(message="Response reevaluation requested. Updated results will appear shortly.")
+
+    workers_available = celery_workers_available()
+    if workers_available:
+        await dispatch_session_processing(int(answer.session_id), workers_available=True)
+        message = "Response reevaluation requested. Updated results will appear shortly."
+    else:
+        background_tasks.add_task(_process_candidate_session, int(answer.session_id))
+        message = "Response reevaluation started locally because no Celery worker was available."
+
+    return AuthMessageResponse(message=message)
 
 
 @router.delete("/candidates/{session_id}", response_model=AuthMessageResponse)
