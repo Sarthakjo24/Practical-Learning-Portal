@@ -3,7 +3,6 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api.deps import DBSession
-from app.core.config import settings
 from app.schemas.module import ModuleSummary
 from app.services.module_service import ModuleService
 
@@ -27,7 +26,7 @@ async def list_modules(db: DBSession) -> list[ModuleSummary]:
             slug=module.slug,
             title=module.title,
             description=module.description,
-            question_count=min(question_counts.get(module.id, 0), settings.candidate_question_count),
+            question_count=question_counts.get(module.id, 0),
         )
         for module in modules
     ]

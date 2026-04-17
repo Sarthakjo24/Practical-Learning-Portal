@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -50,8 +51,13 @@ class AdminCandidateDetail(BaseModel):
     status: str
     ai_score: float | None = None
     overall_performance_summary: str | None = None
+    overall_ai_total_score: float | None = None
+    overall_strengths: list[str] | None = None
+    overall_weaknesses: list[str] | None = None
+    question_wise_scores: list[dict[str, Any]] | None = None
     latest_manual_score: ManualScoreResponse | None = None
     login_time: datetime
     submission_time: datetime | None = None
     completed_at: datetime | None = None
     answers: list[CandidateAnswerDetail]
+

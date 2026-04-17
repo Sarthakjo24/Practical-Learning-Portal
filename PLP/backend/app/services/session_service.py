@@ -4,11 +4,12 @@ import logging
 import secrets
 
 from fastapi import HTTPException, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.answer import CandidateAnswer
+from app.models.ai_evaluation import AIEvaluation
+from app.models.answer import CandidateAnswer, Transcript
 from app.core.config import settings
 from app.models.questions import Question
 from app.models.sessions import CandidateSession
@@ -117,13 +118,10 @@ class SessionService:
         old_storage_key = answer.audio_storage_key
         new_storage_key = await self.audio_service.save_candidate_recording(upload, str(session.id), str(question_id))
 
-        if answer.transcript is not None:
-            await self.db.delete(answer.transcript)
-            answer.transcript = None
-
-        if answer.ai_evaluation is not None:
-            await self.db.delete(answer.ai_evaluation)
-            answer.ai_evaluation = None
+        await self.db.execute(delete(Transcript).where(Transcript.answer_id == answer.id))
+        await self.db.execute(delete(AIEvaluation).where(AIEvaluation.answer_id == answer.id))
+        answer.transcript = None
+        answer.ai_evaluation = None
 
         answer.audio_storage_key = new_storage_key
         answer.created_at = utcnow()
@@ -239,8 +237,6 @@ class SessionService:
             evaluation.total_score is None
             or not summary
             or summary.lower().startswith(failure_markers)
-            or len(evaluation.strengths) == 0
-            or len(evaluation.improvement_areas) == 0
         ):
             return None
 

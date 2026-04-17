@@ -8,30 +8,33 @@ export function LoginPage() {
     (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || "/dashboard";
 
   return (
-    <section className="dashboard-grid">
-      <div className="panel">
-        <h1 className="page-title">Secure sign-in</h1>
-        <p className="muted">
-          Use Google or Microsoft through Auth0.
-        </p>
-        <div className="hero-actions">
-          <button className="primary-button" disabled={loading} onClick={() => login("google", returnTo)}>
-            Continue with Google
+    <main className="hero-grid-centered">
+      <div className="panel" style={{ maxWidth: "500px", textAlign: "center" }}>
+        <div style={{ marginBottom: "1rem" }}>
+          <p className="pill" style={{ display: "inline-block", marginBottom: "0.5rem" }}>
+            AUTHENTICATION
+          </p>
+          <h1 style={{ fontSize: "2rem", margin: "0 0 0.5rem" }}>PLP SYSTEM LOGIN</h1>
+        </div>
+        <div className="stack" style={{ gap: "1rem" }}>
+          <button
+            className="auth-sso-button auth-button-google"
+            disabled={loading}
+            onClick={() => login("google", returnTo)}
+          >
+            <span className="auth-sso-icon">G+</span>
+            Sign in with Google
           </button>
-          <button className="secondary-button" disabled={loading} onClick={() => login("microsoft", returnTo)}>
-            Continue with Microsoft
+          <button
+            className="auth-sso-button auth-button-microsoft"
+            disabled={loading}
+            onClick={() => login("microsoft", returnTo)}
+          >
+            <span className="auth-sso-icon">🔒</span>
+            Sign in with Microsoft
           </button>
         </div>
       </div>
-
-      <div className="panel">
-        <h2 className="section-title">What happens next</h2>
-        <div className="stack">
-          <div className="module-card">Your name and email are synced into the candidate profile.</div>
-          <div className="module-card">A unique candidate ID is generated server-side.</div>
-          <div className="module-card">You can start the assessment and submit recordings from the portal.</div>
-        </div>
-      </div>
-    </section>
+    </main>
   );
 }

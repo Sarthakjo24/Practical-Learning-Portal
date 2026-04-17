@@ -166,7 +166,7 @@ export function AdminDashboardPage() {
                     >
                       View response
                     </button>
-                    <button className="ghost-button" onClick={() => handleDelete(item.session_id)}>
+                    <button className="delete-button" onClick={() => handleDelete(item.session_id)}>
                       Delete
                     </button>
                   </td>

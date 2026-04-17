@@ -101,55 +101,59 @@ export function AudioQuestionCard({ answer, pendingFile, onRecordingReady }: Aud
         {hasExistingResponse ? <span className="status success">Recorded</span> : <span className="status warning">Awaiting response</span>}
       </div>
 
-      <div>
-        <p className="muted">Scenario audio</p>
-        <audio
-          controls
-          controlsList="nodownload"
-          onContextMenu={(event) => event.preventDefault()}
-          src={answer.question_audio_url}
-          style={{ width: "100%" }}
-        />
-      </div>
-
-      <div className="record-strip">
-        {!recording ? (
-          <button className="primary-button" type="button" onClick={startRecording} disabled={isResubmitExhausted}>
-            {hasExistingResponse ? "Record replacement" : "Start recording"}
-          </button>
-        ) : (
-          <button className="secondary-button" type="button" onClick={stopRecording}>
-            Stop recording
-          </button>
-        )}
-      </div>
-
-      {previewUrl ? (
+      <div className="question-body">
         <div>
-          <p className="muted">Candidate playback</p>
+          <p className="muted">Scenario audio</p>
           <audio
             controls
             controlsList="nodownload"
             onContextMenu={(event) => event.preventDefault()}
-            src={previewUrl}
+            src={answer.question_audio_url}
             style={{ width: "100%" }}
           />
         </div>
-      ) : null}
 
-      <div className="record-strip">
-        {isResubmitExhausted ? <span className="status warning">resubmit attempts exhausted</span> : null}
-        {answer.transcript_text ? <span className="status success">Processed</span> : null}
+        <div className="record-strip">
+          {!recording ? (
+            <button className="primary-button" type="button" onClick={startRecording} disabled={isResubmitExhausted}>
+              {hasExistingResponse ? "Record replacement" : "Start recording"}
+            </button>
+          ) : (
+            <button className="secondary-button" type="button" onClick={stopRecording}>
+              Stop recording
+            </button>
+          )}
+        </div>
+
+        {previewUrl ? (
+          <div>
+            <p className="muted">Candidate playback</p>
+            <audio
+              controls
+              controlsList="nodownload"
+              onContextMenu={(event) => event.preventDefault()}
+              src={previewUrl}
+              style={{ width: "100%" }}
+            />
+          </div>
+        ) : null}
       </div>
 
-      {answer.transcript_text ? (
-        <div className="module-card">
-          <strong>Transcript</strong>
-          <p className="muted">{answer.transcript_text}</p>
+      <div className="question-footer">
+        <div className="record-strip">
+          {isResubmitExhausted ? <span className="status warning">resubmit attempts exhausted</span> : null}
+          {answer.transcript_text ? <span className="status success">Processed</span> : null}
         </div>
-      ) : null}
 
-      {error ? <p className="muted">{error}</p> : null}
+        {answer.transcript_text ? (
+          <div className="module-card">
+            <strong>Transcript</strong>
+            <p className="muted">{answer.transcript_text}</p>
+          </div>
+        ) : null}
+
+        {error ? <p className="muted">{error}</p> : null}
+      </div>
     </article>
   );
 }

@@ -65,7 +65,13 @@ class Transcript(Base):
     __tablename__ = "transcripts"
 
     id: Mapped[int] = mapped_column("transcript_id", Integer, primary_key=True, autoincrement=True)
-    answer_id: Mapped[int] = mapped_column(Integer, ForeignKey("candidate_answers.answer_id"), index=True, nullable=False)
+    answer_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("candidate_answers.answer_id"),
+        index=True,
+        unique=True,
+        nullable=False,
+    )
     transcript_text: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, default=utcnow, nullable=False)
 

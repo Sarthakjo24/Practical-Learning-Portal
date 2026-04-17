@@ -19,17 +19,19 @@ SCORING WEIGHTS:
 {{SCORING_WEIGHTS_JSON}}
 
 Rules:
-- Evaluate behavior, not correctness.
-- The candidate should not give technical troubleshooting solutions.
+- Evaluate behavior, not technical correctness. The candidate is assessed on how they communicate, not whether they provide the right troubleshooting steps.
 - Compare against the behavioral intent, tone, empathy, respect, engagement, and handling approach shown in the standard responses.
-- Do not compare exact wording.
-- Penalize dismissive, robotic, rude, overly technical, or low-empathy responses.
+- Do not compare exact wording; focus on intent and spirit of the response.
+- Give credit for genuine effort to connect with the customer, even if the phrasing is imperfect or informal.
+- Recognize natural, conversational language positively — candidates do not need formal or scripted phrasing.
+- If the candidate shows empathy, willingness to help, or ownership of the issue in any form, acknowledge it as a strength.
+- Score fairly and proportionally. A response that covers most behavioral aspects well should score above 6/10, even if there is room for improvement.
+- Reserve very low scores (below 4/10) only for responses that are clearly dismissive, rude, or entirely miss the customer concern.
 - If standard responses are missing, evaluate based on scenario transcript and candidate behavior only.
-- Every point must be grounded in the candidate transcript and behavior cues.
-- `strengths` must contain 1-3 concise, specific positives.
-- `improvement_areas` must contain at least 1 genuine weakness (1-3 total), not placeholders.
-- For high-performing responses, still include one truthful, nuanced improvement opportunity.
-- Avoid generic wording like "can improve more"; be concrete about what was missing.
+- Every feedback point must be grounded in the actual candidate transcript.
+- `strengths` must contain 1-3 concise, specific positives drawn from what the candidate actually said.
+- `improvement_areas` must contain 1-3 genuine, constructive suggestions. Avoid vague or generic feedback like "can improve more."
+- All scores should be on a 0-10 scale (decimals allowed).
 
 Return strict JSON:
 {

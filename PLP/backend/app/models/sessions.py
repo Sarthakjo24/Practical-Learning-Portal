@@ -56,10 +56,6 @@ class CandidateSession(Base):
             return False
         if evaluation.total_score is None:
             return False
-        if len(evaluation.strengths) == 0:
-            return False
-        if len(evaluation.improvement_areas) == 0:
-            return False
         return True
 
     @property

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentAdminUser, DBSession
+from app.models.ai_evaluation import AIEvaluation
 from app.models.answer import CandidateAnswer
 from app.models.sessions import CandidateSession
 from app.schemas.admin import (
@@ -84,9 +85,8 @@ async def reprocess_session(session_id: str, db: DBSession, _: CurrentAdminUser)
         )
 
     for answer in session.answers:
-        if answer.ai_evaluation is not None:
-            await db.delete(answer.ai_evaluation)
-            answer.ai_evaluation = None
+        await db.execute(delete(AIEvaluation).where(AIEvaluation.answer_id == answer.id))
+        answer.ai_evaluation = None
 
     await db.commit()
     await dispatch_session_processing(parsed_session_id)
@@ -117,9 +117,8 @@ async def reevaluate_answer(answer_id: str, db: DBSession, _: CurrentAdminUser) 
             detail="Session has not been submitted yet.",
         )
 
-    if answer.ai_evaluation is not None:
-        await db.delete(answer.ai_evaluation)
-        answer.ai_evaluation = None
+    await db.execute(delete(AIEvaluation).where(AIEvaluation.answer_id == answer.id))
+    answer.ai_evaluation = None
 
     await db.commit()
     await dispatch_session_processing(int(answer.session_id))

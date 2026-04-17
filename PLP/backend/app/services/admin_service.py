@@ -137,10 +137,33 @@ class AdminService:
                 }
             )
 
-        overall_performance_summary = await self._build_overall_performance_summary(
+        overall_perf = await self._build_overall_performance_summary(
             session=session,
             serialized_answers=answers,
         )
+        overall_summary_text: str | None = None
+        overall_ai_total_score: float | None = None
+        overall_strengths: list[str] | None = None
+        overall_weaknesses: list[str] | None = None
+        question_wise_scores: list[dict[str, Any]] | None = None
+
+        if isinstance(overall_perf, dict):
+            overall_summary_text = str(overall_perf.get("overall_summary") or "").strip() or None
+            raw_ts = overall_perf.get("total_score")
+            if raw_ts is not None:
+                try:
+                    overall_ai_total_score = round(float(raw_ts), 2)
+                except (TypeError, ValueError):
+                    pass
+            raw_strengths = overall_perf.get("strengths")
+            if isinstance(raw_strengths, list):
+                overall_strengths = [str(s).strip() for s in raw_strengths if str(s).strip()]
+            raw_weaknesses = overall_perf.get("weaknesses")
+            if isinstance(raw_weaknesses, list):
+                overall_weaknesses = [str(w).strip() for w in raw_weaknesses if str(w).strip()]
+            raw_qws = overall_perf.get("question_wise_scores")
+            if isinstance(raw_qws, list):
+                question_wise_scores = raw_qws
 
         latest_manual = session.manual_scores[0] if session.manual_scores else None
         if latest_manual is not None:
@@ -155,7 +178,11 @@ class AdminService:
             module_title=session.module.title,
             status=session.status.value,
             ai_score=session.ai_score,
-            overall_performance_summary=overall_performance_summary,
+            overall_performance_summary=overall_summary_text,
+            overall_ai_total_score=overall_ai_total_score,
+            overall_strengths=overall_strengths,
+            overall_weaknesses=overall_weaknesses,
+            question_wise_scores=question_wise_scores,
             latest_manual_score=(
                 {
                     "id": str(latest_manual.id),
@@ -224,8 +251,6 @@ class AdminService:
             evaluation.total_score is None
             or not summary
             or summary.lower().startswith(failure_markers)
-            or len(evaluation.strengths) == 0
-            or len(evaluation.improvement_areas) == 0
         ):
             return None
 
@@ -249,7 +274,7 @@ class AdminService:
         self,
         session: CandidateSession,
         serialized_answers: list[dict[str, Any]],
-    ) -> str | None:
+    ) -> dict[str, Any] | None:
         evaluated_answers: list[dict[str, Any]] = []
         for answer in serialized_answers:
             evaluation = answer.get("evaluation")
@@ -286,14 +311,14 @@ class AdminService:
         summary_service = EvaluationService()
         if summary_service.client is not None:
             try:
-                summary = await summary_service.summarize_candidate_performance(
+                summary_payload = await summary_service.summarize_candidate_performance(
                     module_title=session.module.title,
                     candidate_name=candidate_name,
                     candidate_id=candidate_id,
                     evaluated_answers=evaluated_answers,
                 )
-                if summary.strip():
-                    return summary.strip()
+                if isinstance(summary_payload, dict) and summary_payload.get("overall_summary"):
+                    return summary_payload
             except Exception as exc:
                 logger.warning(
                     "Falling back to heuristic overall summary for session %s: %s",
@@ -303,11 +328,13 @@ class AdminService:
 
         return self._heuristic_overall_summary(evaluated_answers)
 
-    def _heuristic_overall_summary(self, evaluated_answers: list[dict[str, Any]]) -> str | None:
+
+    def _heuristic_overall_summary(self, evaluated_answers: list[dict[str, Any]]) -> dict[str, Any] | None:
         if not evaluated_answers:
             return None
 
         scores = []
+        question_wise_scores = []
         for answer in evaluated_answers:
             raw_score = answer.get("total_score")
             try:
@@ -315,6 +342,11 @@ class AdminService:
             except (TypeError, ValueError):
                 continue
             scores.append(score)
+            question_wise_scores.append({
+                "question_code": answer.get("question_code", ""),
+                "question_title": answer.get("question_title", ""),
+                "score": round(score, 2),
+            })
 
         average_score = round(mean(scores), 2) if scores else None
         strengths = self._collect_unique_points(evaluated_answers, "strengths")
@@ -328,10 +360,17 @@ class AdminService:
             if improvement_areas
             else "showing more empathy and clearer problem-handling intent"
         )
-        return (
+        summary_text = (
             f"Across {response_count} evaluated responses{score_text}, the candidate showed recurring strengths in "
             f"{strengths_text}. The main opportunities to improve were {improvements_text}."
         )
+        return {
+            "total_score": average_score,
+            "strengths": strengths,
+            "weaknesses": improvement_areas,
+            "question_wise_scores": question_wise_scores,
+            "overall_summary": summary_text,
+        }
 
     def _collect_unique_points(
         self,

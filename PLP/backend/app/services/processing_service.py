@@ -99,16 +99,6 @@ async def enqueue_pending_processing_sessions() -> int:
 
     cutoff = utcnow() - timedelta(seconds=max(1, settings.eval_requeue_session_age_seconds))
     async with AsyncSessionLocal() as db:
-        missing_strengths = or_(
-            AIEvaluation._strengths_text.is_(None),
-            AIEvaluation._strengths_text == "",
-            AIEvaluation._strengths_text == "[]",
-        )
-        missing_weaknesses = or_(
-            AIEvaluation._improvement_text.is_(None),
-            AIEvaluation._improvement_text == "",
-            AIEvaluation._improvement_text == "[]",
-        )
         missing_summary = or_(
             AIEvaluation.final_summary.is_(None),
             AIEvaluation.final_summary == "",
@@ -125,8 +115,6 @@ async def enqueue_pending_processing_sessions() -> int:
                 or_(
                     AIEvaluation.id.is_(None),
                     AIEvaluation.total_score.is_(None),
-                    missing_strengths,
-                    missing_weaknesses,
                     missing_summary,
                     AIEvaluation.final_summary.like("Evaluation failed:%"),
                     AIEvaluation.final_summary.like("Audio processing failed:%"),

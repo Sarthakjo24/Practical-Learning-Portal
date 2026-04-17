@@ -13,7 +13,13 @@ class AIEvaluation(Base):
     __tablename__ = "ai_evaluations"
 
     id: Mapped[int] = mapped_column("ai_evaluation_id", Integer, primary_key=True, autoincrement=True)
-    answer_id: Mapped[int] = mapped_column(Integer, ForeignKey("candidate_answers.answer_id"), index=True, nullable=False)
+    answer_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("candidate_answers.answer_id"),
+        index=True,
+        unique=True,
+        nullable=False,
+    )
     total_score: Mapped[float | None] = mapped_column("score", Float, nullable=True)
     courtesy_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     empathy_score: Mapped[float | None] = mapped_column(Float, nullable=True)

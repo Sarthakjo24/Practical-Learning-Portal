@@ -1,4 +1,4 @@
-import { Link, Route, Routes } from "react-router-dom";
+import { Link, Route, Routes, useLocation } from "react-router-dom";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { useSession } from "./auth/SessionProvider";
 import { AdminDashboardPage } from "./pages/AdminDashboardPage";
@@ -11,6 +11,9 @@ import { SubmissionSuccessPage } from "./pages/SubmissionSuccessPage";
 
 function AppShell() {
   const { user, logout } = useSession();
+  const location = useLocation();
+  const isCandidatePortalRoute =
+    location.pathname.startsWith("/dashboard") || location.pathname.startsWith("/assessment");
 
   return (
     <div className="app-frame">
@@ -23,9 +26,11 @@ function AppShell() {
           <Link to="/dashboard">Candidate</Link>
           <Link to="/admin">Admin</Link>
           {user ? (
-            <button className="ghost-button" onClick={() => void logout()}>
-              Sign out
-            </button>
+            !isCandidatePortalRoute ? (
+              <button className="logout-button" onClick={() => void logout()}>
+                Sign out
+              </button>
+            ) : null
           ) : (
             <Link to="/login" className="ghost-button">
               Sign in

@@ -108,7 +108,7 @@ export function AssessmentPage() {
   const scenarioCount = session?.answers.length ?? 0;
 
   return (
-    <section className="stack">
+    <section className="assessment-stack">
       <div className="panel">
         <h1 className="page-title">{session?.module_title}</h1>
         <div className="badge-row">
@@ -118,7 +118,7 @@ export function AssessmentPage() {
         <div className="spacer" />
         <div className="module-card">
           <p className="muted">
-            <strong>INSTRUCTIONS :</strong> There are total of {scenarioCount} scenarios which are faced by customers.
+            <strong>INSTRUCTIONS :</strong> There are total of {scenarioCount} scenarios which are faced by customers. Listen to the audio of the scenario carefully .
             Provide answer for each scenario by recording your response. You don't have to be too much technical
             regarding the problem. You can resubmit a response if something fails in first attempt. Press SUBMIT
             RESPONSE once all the responses have been recorded. All recorded answers will upload together when you
@@ -140,17 +140,17 @@ export function AssessmentPage() {
           />
         ))}
 
-      <div className="panel">
-        <button
-          className="primary-button"
-          type="button"
-          disabled={!readyToSubmit || submitting}
-          onClick={handleSubmit}
-        >
-          {submitting ? "Submitting..." : "Submit response"}
-        </button>
-        {error ? <p className="muted">{error}</p> : null}
-      </div>
+      {error ? <div className="panel"><p className="muted">{error}</p></div> : null}
+
+      <button
+        className="primary-button"
+        type="button"
+        disabled={!readyToSubmit || submitting}
+        onClick={handleSubmit}
+        style={{ width: "100%", padding: "1.2rem", fontSize: "1rem" }}
+      >
+        {submitting ? "Submitting..." : "Submit response"}
+      </button>
     </section>
   );
 }
