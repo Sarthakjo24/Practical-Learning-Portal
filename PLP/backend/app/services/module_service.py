@@ -3,32 +3,32 @@ from __future__ import annotations
 import random
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.models.questions import EvaluationConfig, Module, Question, StandardResponse
 from app.schemas.evaluation import EvaluationConfigUpdate
 from app.services.audio_service import AudioService
+from app.services.module_repository import ModuleRepository
 from app.utils.helpers import basename_from_path
 
 
 class ModuleService:
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(
+        self,
+        db: AsyncSession,
+        *,
+        audio_service: AudioService | None = None,
+        repository: ModuleRepository | None = None,
+    ) -> None:
         self.db = db
-        self.audio_service = AudioService()
+        self.audio_service = audio_service or AudioService()
+        self.repository = repository or ModuleRepository(db)
 
     async def list_active_modules(self) -> list[Module]:
-        result = await self.db.execute(select(Module).where(Module.is_active.is_(True)).order_by(Module.title))
-        return list(result.scalars().all())
+        return await self.repository.list_active_modules()
 
     async def count_questions(self, module_id: int) -> int:
-        result = await self.db.execute(
-            select(Question)
-            .where(Question.module_id == module_id)
-            .options(selectinload(Question.standard_responses))
-        )
-        questions = list(result.scalars().all())
+        questions = await self.repository.list_questions_for_module(module_id)
         eligible_questions = [question for question in questions if self._is_eligible_question(question)]
         return len(self._dedupe_questions_by_audio(eligible_questions))
 
@@ -37,13 +37,8 @@ class ModuleService:
             return {}
 
         counts: dict[int, int] = {int(module_id): 0 for module_id in module_ids}
-        result = await self.db.execute(
-            select(Question)
-            .where(Question.module_id.in_(module_ids))
-            .options(selectinload(Question.standard_responses))
-        )
         module_questions: dict[int, list[Question]] = {}
-        for question in result.scalars().all():
+        for question in await self.repository.list_questions_for_modules(module_ids):
             module_questions.setdefault(int(question.module_id), []).append(question)
 
         for module_id, questions in module_questions.items():
@@ -60,12 +55,7 @@ class ModuleService:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Module not found.")
 
     async def get_random_questions(self, module_id: int, limit: int) -> list[Question]:
-        result = await self.db.execute(
-            select(Question)
-            .where(Question.module_id == module_id)
-            .options(selectinload(Question.standard_responses))
-        )
-        questions = list(result.scalars().all())
+        questions = await self.repository.list_questions_for_module(module_id)
         eligible_questions = [
             question
             for question in questions
@@ -86,12 +76,7 @@ class ModuleService:
         return random.sample(eligible_questions, k=limit)
 
     async def get_active_evaluation_config(self, module_id: int) -> EvaluationConfig:
-        result = await self.db.execute(
-            select(EvaluationConfig)
-            .where(EvaluationConfig.module_id == module_id)
-            .order_by(EvaluationConfig.id.desc())
-        )
-        config = result.scalars().first()
+        config = await self.repository.get_latest_evaluation_config(module_id)
         if config is None:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -101,12 +86,7 @@ class ModuleService:
 
     async def update_evaluation_config(self, module_slug: str, payload: EvaluationConfigUpdate) -> EvaluationConfig:
         module = await self.get_module_by_slug(module_slug)
-        result = await self.db.execute(
-            select(EvaluationConfig)
-            .where(EvaluationConfig.module_id == module.id)
-            .order_by(EvaluationConfig.id.desc())
-        )
-        config = result.scalars().first()
+        config = await self.repository.get_latest_evaluation_config(module.id)
 
         if config is None:
             config = EvaluationConfig(module_id=module.id, prompt_template=payload.prompt_template)

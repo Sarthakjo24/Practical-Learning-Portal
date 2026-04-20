@@ -8,6 +8,7 @@ import subprocess
 import sys
 import unicodedata
 from pathlib import Path
+from typing import Callable
 
 from openai import AsyncOpenAI
 
@@ -19,21 +20,35 @@ _ALLOWED_LANGUAGE_CODES = {"en", "hi"}
 
 
 class TranscriptionService:
-    def __init__(self) -> None:
-        self._openai_client: AsyncOpenAI | None = None
-        if settings.openai_api_key and settings.openai_api_key != "sk-placeholder":
+    def __init__(
+        self,
+        *,
+        openai_client: AsyncOpenAI | None = None,
+        storage_dir: Path | None = None,
+        use_faster_whisper: bool | None = None,
+        subprocess_runner: Callable[[Path], dict] | None = None,
+    ) -> None:
+        self._settings = settings
+        self._storage_dir = (storage_dir or self._settings.storage_dir).resolve()
+        self._use_faster_whisper = self._settings.use_faster_whisper if use_faster_whisper is None else use_faster_whisper
+        self._subprocess_runner = subprocess_runner
+        self._openai_client: AsyncOpenAI | None = openai_client
+        if self._openai_client is None and self._settings.openai_api_key and self._settings.openai_api_key != "sk-placeholder":
             self._openai_client = AsyncOpenAI(
-                api_key=settings.openai_api_key,
-                timeout=settings.openai_timeout_seconds,
+                api_key=self._settings.openai_api_key,
+                timeout=self._settings.openai_timeout_seconds,
             )
 
     async def transcribe(self, storage_key: str) -> dict:
-        audio_path = (settings.storage_dir / storage_key).resolve()
+        audio_path = (self._storage_dir / storage_key).resolve()
         if not audio_path.exists():
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
-        if settings.use_faster_whisper:
+        if self._use_faster_whisper:
             try:
-                payload = await asyncio.to_thread(self._transcribe_subprocess, audio_path)
+                if self._subprocess_runner is None:
+                    payload = await asyncio.to_thread(self._transcribe_subprocess, audio_path)
+                else:
+                    payload = await asyncio.to_thread(self._subprocess_runner, audio_path)
                 return await self._postprocess_payload(payload, audio_path, source="faster_whisper")
             except Exception as faster_whisper_error:
                 if self._openai_client is None:
@@ -62,7 +77,7 @@ class TranscriptionService:
 
         with audio_path.open("rb") as audio_file:
             response = await self._openai_client.audio.transcriptions.create(
-                model=settings.openai_transcribe_model,
+                model=self._settings.openai_transcribe_model,
                 file=audio_file,
                 prompt=(
                     "Transcribe speech only if it is English or Hindi. "
@@ -76,7 +91,7 @@ class TranscriptionService:
         return {
             "transcript_text": transcript_text,
             "detected_language": detected_language,
-            "model_name": settings.openai_transcribe_model,
+            "model_name": self._settings.openai_transcribe_model,
             "processing_seconds": None,
         }
 
@@ -129,8 +144,8 @@ class TranscriptionService:
             device = "cpu"
             compute_type = "float32"
         else:
-            device = settings.faster_whisper_device
-            compute_type = settings.faster_whisper_compute_type
+            device = self._settings.faster_whisper_device
+            compute_type = self._settings.faster_whisper_compute_type
 
         # Pass thread-limiting env vars to the subprocess.
         # CTranslate2 crashes on Windows when it tries to spawn multiple CPU
@@ -148,7 +163,7 @@ class TranscriptionService:
                     sys.executable,
                     str(_WORKER_SCRIPT),
                     str(audio_path),
-                    settings.faster_whisper_model,
+                    self._settings.faster_whisper_model,
                     device,
                     compute_type,
                 ],

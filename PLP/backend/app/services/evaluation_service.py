@@ -5,12 +5,14 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from openai import APIConnectionError, APIError, APITimeoutError, AsyncOpenAI, RateLimitError
 
 from app.core.config import settings
 from app.models.questions import EvaluationConfig, Module, Question
+from app.services.payload_parsers import EvaluationPayloadParser
+from app.services.retry_utils import retry_async
 from app.utils.helpers import extract_json_object
 
 logger = logging.getLogger(__name__)
@@ -26,11 +28,17 @@ _RETRYABLE_EVAL_ERRORS = (
 
 
 class EvaluationService:
-    def __init__(self) -> None:
-        self.client: AsyncOpenAI | None = None
-        if settings.openai_api_key and settings.openai_api_key != "sk-placeholder":
+    def __init__(
+        self,
+        *,
+        client: AsyncOpenAI | None = None,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ) -> None:
+        self.client: AsyncOpenAI | None = client
+        if self.client is None and settings.openai_api_key and settings.openai_api_key != "sk-placeholder":
             self.client = AsyncOpenAI(api_key=settings.openai_api_key, timeout=settings.openai_timeout_seconds)
         self.max_retries = 3
+        self._sleep = sleep
 
     async def evaluate_answer(
         self,
@@ -50,8 +58,7 @@ class EvaluationService:
             scoring_weights=evaluation_config.scoring_weights,
         )
 
-        last_error: Exception | None = None
-        for attempt in range(self.max_retries):
+        async def _invoke_model() -> dict[str, Any]:
             try:
                 response = await self.client.chat.completions.create(
                     model=evaluation_config.model_name or settings.effective_openai_eval_model,
@@ -69,26 +76,22 @@ class EvaluationService:
                 payload = extract_json_object(content)
                 return self._normalize_evaluation_payload(payload)
             except ValueError as exc:
-                last_error = RuntimeError(f"Unable to parse evaluation result: {exc}")
+                # Treat malformed responses as retryable parse errors.
                 logger.warning(
-                    "OpenAI returned non-JSON evaluation payload (attempt %s/%s).",
-                    attempt + 1,
-                    self.max_retries,
+                    "OpenAI returned non-JSON evaluation payload."
                 )
-                if attempt < self.max_retries - 1:
-                    await asyncio.sleep(2**attempt)
-                continue
-            except _RETRYABLE_EVAL_ERRORS as exc:
-                last_error = exc
-                if attempt < self.max_retries - 1:
-                    await asyncio.sleep(2**attempt)
-                    continue
-            except Exception as exc:
-                last_error = exc
-                break
+                raise RuntimeError(f"Unable to parse evaluation result: {exc}") from exc
 
-        if last_error is None:
-            last_error = RuntimeError("Unknown OpenAI evaluation error.")
+        try:
+            return await retry_async(
+                _invoke_model,
+                max_attempts=self.max_retries,
+                retryable_exceptions=(*_RETRYABLE_EVAL_ERRORS, RuntimeError),
+                sleep=self._sleep,
+            )
+        except Exception as exc:
+            last_error = exc
+
         raise RuntimeError(
             f"OpenAI evaluation failed after {self.max_retries} attempts: {last_error}"
         )
@@ -113,8 +116,7 @@ class EvaluationService:
             evaluated_answers=evaluated_answers,
         )
 
-        last_error: Exception | None = None
-        for attempt in range(self.max_retries):
+        async def _invoke_model() -> dict[str, Any]:
             try:
                 response = await self.client.chat.completions.create(
                     model=settings.effective_openai_eval_model,
@@ -130,31 +132,23 @@ class EvaluationService:
                 )
                 content = response.choices[0].message.content or "{}"
                 payload = extract_json_object(content)
-                summary = str(payload.get("overall_summary") or "").strip()
-                if not summary:
-                    raise ValueError("Missing overall_summary in model output.")
-                return payload
+                return EvaluationPayloadParser.require_overall_summary(payload)
             except ValueError as exc:
-                last_error = RuntimeError(f"Unable to parse summary result: {exc}")
                 logger.warning(
-                    "OpenAI returned non-JSON or incomplete summary payload (attempt %s/%s).",
-                    attempt + 1,
-                    self.max_retries,
+                    "OpenAI returned non-JSON or incomplete summary payload."
                 )
-                if attempt < self.max_retries - 1:
-                    await asyncio.sleep(2**attempt)
-                continue
-            except _RETRYABLE_EVAL_ERRORS as exc:
-                last_error = exc
-                if attempt < self.max_retries - 1:
-                    await asyncio.sleep(2**attempt)
-                    continue
-            except Exception as exc:
-                last_error = exc
-                break
+                raise RuntimeError(f"Unable to parse summary result: {exc}") from exc
 
-        if last_error is None:
-            last_error = RuntimeError("Unknown OpenAI summary error.")
+        try:
+            return await retry_async(
+                _invoke_model,
+                max_attempts=self.max_retries,
+                retryable_exceptions=(*_RETRYABLE_EVAL_ERRORS, RuntimeError),
+                sleep=self._sleep,
+            )
+        except Exception as exc:
+            last_error = exc
+
         raise RuntimeError(
             f"OpenAI summary generation failed after {self.max_retries} attempts: {last_error}"
         )

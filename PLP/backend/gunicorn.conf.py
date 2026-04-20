@@ -1,5 +1,5 @@
 bind = "0.0.0.0:5180"
-workers = 2
+workers = 4
 worker_class = "uvicorn.workers.UvicornWorker"
 timeout = 120
 graceful_timeout = 30
